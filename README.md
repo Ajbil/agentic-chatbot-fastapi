@@ -104,6 +104,10 @@ This repository is intentionally still a learning prototype. It does not yet pro
 
 The next checkpoints will centralize the model registry and API contracts, expand test coverage, introduce real chat history, expose search evidence, and eventually build an explicit LangGraph workflow with evaluation and observability.
 
+## Learning journal
+
+The project's plans, decision reasoning, implementation outcomes, and transferable senior-engineering lessons are recorded in [the learning journal](docs/learning/README.md). Each checkpoint is documented before its pull request is merged so the repository preserves both the code and the reasoning behind it.
+
 ## Security
 
 - Keep secrets only in `.env` or your deployment platform's secret manager.
