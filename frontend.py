@@ -1,5 +1,10 @@
-#step 1: setup UI with streamlit (model provide, model ,system_prompt,web_search,  query)
+import requests
 import streamlit as st
+
+from config import get_settings
+
+
+settings = get_settings()
 
 st.set_page_config(page_title="LangGraph Agent UI", layout="centered")
 st.title("AI Chatbot Agents")
@@ -21,12 +26,10 @@ allow_web_search = st.checkbox("Allow Web Search")
 
 user_query = st.text_area("Enter your query: ", height=150, placeholder="Ask Anything!")
 
-API_URL = "http://127.0.0.1:3003/chat"
+API_URL = str(settings.backend_api_url)
 if st.button("Ask Agent!"):
     if user_query.strip():
         # step 3: Get response from backend after connecting with backend via url and show here
-        import requests
-
         payload={
             "model_name": selected_model,
             "model_provider": provider,
@@ -35,7 +38,11 @@ if st.button("Ask Agent!"):
             "allow_search": allow_web_search
         }
 
-        response=requests.post(API_URL, json=payload)
+        response=requests.post(
+            API_URL,
+            json=payload,
+            timeout=settings.backend_request_timeout_seconds,
+        )
         if response.status_code == 200:
             response_data = response.json()
             if "error" in response_data:

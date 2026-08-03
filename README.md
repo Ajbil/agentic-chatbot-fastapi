@@ -29,16 +29,14 @@ User
 
 - Python 3.12
 - Pipenv
-- API keys for Groq, OpenAI, and Tavily
-
-The current prototype validates all three API keys when the backend starts, even if a request uses only one model provider or does not use search.
+- An API key for each service you choose to use
 
 ## Local setup
 
 1. Install the dependencies:
 
    ```powershell
-   pipenv install
+   python -m pipenv sync --dev
    ```
 
 2. Create a local environment file from the template:
@@ -47,21 +45,49 @@ The current prototype validates all three API keys when the backend starts, even
    Copy-Item .env.example .env
    ```
 
-3. Add your API keys to `.env`. Never commit this file.
+3. Add the keys needed for the features you use. Never commit `.env`:
+
+   - Groq models require `GROQ_API_KEY`.
+   - OpenAI models require `OPENAI_API_KEY`.
+   - Web search requires `TAVILY_API_KEY`.
 
 4. Start the FastAPI backend:
 
    ```powershell
-   pipenv run python backend.py
+   python -m pipenv run python backend.py
    ```
 
 5. In a second terminal, start the Streamlit frontend:
 
    ```powershell
-   pipenv run streamlit run frontend.py
+   python -m pipenv run streamlit run frontend.py
    ```
 
 6. Open the Streamlit URL shown in the terminal. FastAPI's interactive API documentation is available at `http://127.0.0.1:3003/docs` while the backend is running.
+
+## Configuration
+
+Configuration is loaded from environment variables and the local `.env` file.
+
+| Variable | Required when | Default |
+|---|---|---|
+| `GROQ_API_KEY` | A Groq model is selected | None |
+| `OPENAI_API_KEY` | An OpenAI model is selected | None |
+| `TAVILY_API_KEY` | Web search is enabled | None |
+| `BACKEND_API_URL` | Optional frontend override | `http://127.0.0.1:3003/chat` |
+| `BACKEND_REQUEST_TIMEOUT_SECONDS` | Optional frontend override | `30` |
+
+Settings are validated centrally. Missing credentials fail only when a request uses the corresponding provider or tool.
+
+## Tests
+
+Run the offline test suite with:
+
+```powershell
+python -m pipenv run python -m pytest
+```
+
+The tests use fake providers and do not make Groq, OpenAI, or Tavily requests.
 
 ## Current capabilities
 
@@ -72,15 +98,18 @@ The current prototype validates all three API keys when the backend starts, even
 
 ## Current limitations
 
-This repository is intentionally still a learning prototype. It does not yet provide conversation memory, streaming, source display, automated tests, persistent storage, production-grade error handling, or an explicit custom LangGraph workflow.
+This repository is intentionally still a learning prototype. It does not yet provide conversation memory, streaming, source display, comprehensive test coverage, persistent storage, production-grade error handling, or an explicit custom LangGraph workflow.
 
 ## Learning roadmap
 
-The next checkpoints will stabilize configuration and API contracts, add tests with fake providers, introduce real chat history, expose search evidence, and eventually build an explicit LangGraph workflow with evaluation and observability.
+The next checkpoints will centralize the model registry and API contracts, expand test coverage, introduce real chat history, expose search evidence, and eventually build an explicit LangGraph workflow with evaluation and observability.
+
+## Learning journal
+
+The project's plans, decision reasoning, implementation outcomes, and transferable senior-engineering lessons are recorded in [the learning journal](docs/learning/README.md). Each checkpoint is documented before its pull request is merged so the repository preserves both the code and the reasoning behind it.
 
 ## Security
 
 - Keep secrets only in `.env` or your deployment platform's secret manager.
 - Use `.env.example` to document required variable names without real values.
 - If a secret is ever committed, revoke and replace it; deleting it from the latest commit is not sufficient.
-
