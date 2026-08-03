@@ -1,26 +1,26 @@
-# Step 1: load API keys
-import os
-
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 from langchain_tavily import TavilySearch
 from langchain_openai import ChatOpenAI
+from pydantic import SecretStr
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+from config import Settings, get_settings
 
-if not GROQ_API_KEY:
-    raise RuntimeError("GROQ_API_KEY is missing. Add it to your .env file or environment.")
 
-if not TAVILY_API_KEY:
-    raise RuntimeError("TAVILY_API_KEY is missing. Add it to your .env file or environment.")
+class MissingConfigurationError(RuntimeError):
+    """Raised when a requested feature is missing required configuration."""
 
-if not OPENAI_API_KEY:
-    raise RuntimeError("OPENAI_API_KEY is missing. Add it to your .env file or environment.")
 
-    
+def _require_secret(secret: SecretStr | None, variable_name: str) -> str:
+    if secret is None or not secret.get_secret_value().strip():
+        raise MissingConfigurationError(
+            f"{variable_name} is required for this request. Add it to your .env file or environment."
+        )
+
+    return secret.get_secret_value()
+
+
 def _convert_messages_to_langchain(query):
     if isinstance(query, str):
         return [HumanMessage(content=query)]
@@ -53,17 +53,38 @@ def _convert_messages_to_langchain(query):
 system_prompt = "act as an AI agent who is smart and friendly"
 
 
-def get_response_from_ai_agent(llm_id, query, allow_search, system_prompt, provider):
+def get_response_from_ai_agent(
+    llm_id,
+    query,
+    allow_search,
+    system_prompt,
+    provider,
+    settings: Settings | None = None,
+):
+    app_settings = settings or get_settings()
     provider_name = (provider or "").strip().lower()
 
     if provider_name == "groq":
-        llm = ChatGroq(model=llm_id, groq_api_key=GROQ_API_KEY)
+        provider_api_key = _require_secret(app_settings.groq_api_key, "GROQ_API_KEY")
     elif provider_name == "openai":
-        llm = ChatOpenAI(model=llm_id, api_key=OPENAI_API_KEY)
+        provider_api_key = _require_secret(app_settings.openai_api_key, "OPENAI_API_KEY")
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
-    tools = [TavilySearch(max_results=2, api_key=TAVILY_API_KEY)] if allow_search else []
+    tavily_api_key = None
+    if allow_search:
+        tavily_api_key = _require_secret(app_settings.tavily_api_key, "TAVILY_API_KEY")
+
+    if provider_name == "groq":
+        llm = ChatGroq(model=llm_id, groq_api_key=provider_api_key)
+    else:
+        llm = ChatOpenAI(model=llm_id, api_key=provider_api_key)
+
+    tools = (
+        [TavilySearch(max_results=2, api_key=tavily_api_key)]
+        if tavily_api_key is not None
+        else []
+    )
 
     agent = create_agent(
         model=llm,
