@@ -9,7 +9,12 @@ The journal is not a raw development transcript. Each checkpoint is a curated en
 | Checkpoint | Topic | Status | References |
 |---|---|---|---|
 | [00](checkpoints/00-repository-foundation/README.md) | Repository and GitHub foundation | Complete | [Commit `1085458`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/1085458) |
-| [01](checkpoints/01-configuration-foundation/README.md) | Deterministic, testable configuration | In review | [PR #1](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/1), commit `299664a` |
+| [01](checkpoints/01-configuration-foundation/README.md) | Deterministic, testable configuration | Complete | [PR #1](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/1), [merge commit `aa46fff`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/aa46fff) |
+| [02](checkpoints/02-continuous-integration/README.md) | Continuous integration quality gate | In review | Draft PR pending |
+
+## Reference material
+
+The [reference archive](reference/README.md) preserves the original project analysis and roadmap that informed the checkpoint sequence. It is kept as historical input; checkpoint records describe the decisions and outcomes that followed.
 
 ## Checkpoint workflow
 

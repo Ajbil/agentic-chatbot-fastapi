@@ -2,11 +2,12 @@
 
 | Field | Value |
 |---|---|
-| Status | In review |
+| Status | Complete |
 | Date | 2026-08-03 |
 | Branch | `agent/config-foundation` |
 | Pull request | [#1 — Make configuration deterministic](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/1) |
 | Implementation commit | [`299664a`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/299664a) |
+| Merge commit | [`aa46fff`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/aa46fff) |
 
 ## Objective
 
