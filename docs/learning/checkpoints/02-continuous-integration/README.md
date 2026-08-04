@@ -119,6 +119,7 @@ CI therefore comes before the next feature checkpoint. It turns the tests we alr
 - Restricted the workflow token to read-only repository contents and enabled cancellation of superseded runs.
 - Added a README badge that links to workflow history.
 - Published the work as a draft pull request for review before merge.
+- Updated the existing default-branch ruleset as `main-quality-gate`, with no bypass actors.
 
 ## Validation evidence
 
@@ -127,8 +128,8 @@ CI therefore comes before the next feature checkpoint. It turns the tests we alr
 - `python -m pipenv run python -m pytest -q` reported 13 passing tests.
 - Syntax compilation passed for `config.py`, `ai_agent.py`, `backend.py`, and `frontend.py`.
 - Git whitespace validation and a repository secret-pattern scan passed.
-- GitHub Actions evidence: Pending first hosted run.
-- Main ruleset evidence: Pending configuration after the hosted check exists.
+- [GitHub Actions run `30892311016`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/30892311016) completed successfully on the draft pull request.
+- [Ruleset `main-quality-gate`](https://github.com/Ajbil/agentic-chatbot-fastapi/rules/20280903) is active for the default branch. GitHub reports pull-request enforcement, resolved-discussion enforcement, strict required check `test`, deletion protection, force-push protection, and no bypass actors.
 
 ## Senior-engineering lessons
 
