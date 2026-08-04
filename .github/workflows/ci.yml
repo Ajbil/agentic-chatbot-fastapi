@@ -21,8 +21,6 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      PIPENV_VENV_IN_PROJECT: "1"
 
     steps:
       - name: Check out repository

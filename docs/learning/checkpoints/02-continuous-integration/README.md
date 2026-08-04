@@ -73,7 +73,7 @@ CI therefore comes before the next feature checkpoint. It turns the tests we alr
 
 ### Cache by the lockfile
 
-- **Decision:** Let `setup-python` cache Pipenv dependencies using `Pipfile.lock` as the dependency path and place the virtual environment in the project.
+- **Decision:** Let `setup-python` cache Pipenv dependencies using `Pipfile.lock` as the dependency path and Pipenv's standard environment location.
 - **Reason:** The lockfile is the correct invalidation key: dependency changes produce a new cache, while unchanged pull requests reuse downloads and environment work.
 - **Alternatives:** No cache or a broad cache key unrelated to dependency state.
 - **Tradeoff:** Caching adds a small amount of workflow complexity and never replaces lock verification.
@@ -129,6 +129,7 @@ CI therefore comes before the next feature checkpoint. It turns the tests we alr
 - Syntax compilation passed for `config.py`, `ai_agent.py`, `backend.py`, and `frontend.py`.
 - Git whitespace validation and a repository secret-pattern scan passed.
 - [GitHub Actions run `30892311016`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/30892311016) completed successfully on the draft pull request.
+- A later hosted run exposed an ineffective-cache warning because an in-project virtual environment did not match `setup-python`'s Pipenv cache path. The override was removed so both tools use the same standard location.
 - [Ruleset `main-quality-gate`](https://github.com/Ajbil/agentic-chatbot-fastapi/rules/20280903) is active for the default branch. GitHub reports pull-request enforcement, resolved-discussion enforcement, strict required check `test`, deletion protection, force-push protection, and no bypass actors.
 
 ## Senior-engineering lessons
