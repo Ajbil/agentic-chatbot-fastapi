@@ -5,7 +5,7 @@
 | Status | In review |
 | Date | 2026-08-04 |
 | Branch | `agent/ci-foundation` |
-| Pull request | Pending |
+| Pull request | [#2 — Add continuous integration quality gate](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/2) |
 | Implementation commit | [`c40517a`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/c40517a) |
 
 ## Objective
