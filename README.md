@@ -1,5 +1,7 @@
 # Agentic Chatbot with FastAPI
 
+[![CI](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/workflows/ci.yml/badge.svg)](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/workflows/ci.yml)
+
 A learning-focused AI agent application built with a Streamlit frontend, a FastAPI backend, and LangChain's agent abstraction. It supports Groq and OpenAI models and can optionally give the agent access to Tavily web search.
 
 ## Architecture
