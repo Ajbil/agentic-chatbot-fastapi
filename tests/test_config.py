@@ -10,7 +10,7 @@ API_KEY_VARIABLES = ("GROQ_API_KEY", "OPENAI_API_KEY", "TAVILY_API_KEY")
 @pytest.fixture
 def empty_environment(monkeypatch):
     for variable_name in API_KEY_VARIABLES + (
-        "BACKEND_API_URL",
+        "BACKEND_BASE_URL",
         "BACKEND_REQUEST_TIMEOUT_SECONDS",
     ):
         monkeypatch.delenv(variable_name, raising=False)
@@ -22,20 +22,24 @@ def test_settings_have_safe_defaults_without_credentials(empty_environment):
     assert settings.groq_api_key is None
     assert settings.openai_api_key is None
     assert settings.tavily_api_key is None
-    assert str(settings.backend_api_url) == "http://127.0.0.1:3003/chat"
+    assert str(settings.backend_base_url) == "http://127.0.0.1:3003/"
+    assert settings.backend_chat_url == "http://127.0.0.1:3003/chat"
+    assert settings.backend_models_url == "http://127.0.0.1:3003/models"
     assert settings.backend_request_timeout_seconds == 30.0
 
 
 def test_environment_overrides_defaults(monkeypatch, empty_environment):
     monkeypatch.setenv("GROQ_API_KEY", "test-groq-secret")
-    monkeypatch.setenv("BACKEND_API_URL", "http://localhost:9000/chat")
+    monkeypatch.setenv("BACKEND_BASE_URL", "http://localhost:9000/api/")
     monkeypatch.setenv("BACKEND_REQUEST_TIMEOUT_SECONDS", "45")
 
     settings = Settings(_env_file=None)
 
     assert settings.groq_api_key is not None
     assert settings.groq_api_key.get_secret_value() == "test-groq-secret"
-    assert str(settings.backend_api_url) == "http://localhost:9000/chat"
+    assert str(settings.backend_base_url) == "http://localhost:9000/api/"
+    assert settings.backend_chat_url == "http://localhost:9000/api/chat"
+    assert settings.backend_models_url == "http://localhost:9000/api/models"
     assert settings.backend_request_timeout_seconds == 45.0
 
 
@@ -50,3 +54,8 @@ def test_secret_values_are_masked():
 def test_invalid_timeout_is_rejected(timeout):
     with pytest.raises(ValidationError):
         Settings(_env_file=None, backend_request_timeout_seconds=timeout)
+
+
+def test_invalid_backend_base_url_is_rejected():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, backend_base_url="not-a-url")
