@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage
 import ai_agent
 from ai_agent import MissingConfigurationError, get_response_from_ai_agent
 from config import Settings
+from model_registry import ModelSpec, Provider
 
 
 def make_settings(**overrides):
@@ -20,13 +21,23 @@ def make_settings(**overrides):
     return Settings(_env_file=None, **values)
 
 
-def call_agent(settings, provider="Groq", allow_search=False):
+def make_model(provider=Provider.GROQ):
+    return ModelSpec(
+        key="test-model",
+        provider=provider,
+        model_id="test-model",
+        display_name="Test model",
+        context_window_tokens=1_000,
+        supports_tool_calling=True,
+    )
+
+
+def call_agent(settings, provider=Provider.GROQ, allow_search=False):
     return get_response_from_ai_agent(
-        llm_id="test-model",
+        model=make_model(provider),
         query="Hello",
         allow_search=allow_search,
         system_prompt="Be helpful",
-        provider=provider,
         settings=settings,
     )
 
@@ -49,7 +60,7 @@ def test_agent_module_imports_without_credentials():
 
 @pytest.mark.parametrize(
     ("provider", "missing_variable"),
-    [("Groq", "GROQ_API_KEY"), ("OpenAI", "OPENAI_API_KEY")],
+    [(Provider.GROQ, "GROQ_API_KEY"), (Provider.OPENAI, "OPENAI_API_KEY")],
 )
 def test_selected_provider_requires_only_its_credential(provider, missing_variable):
     with pytest.raises(MissingConfigurationError, match=missing_variable):
@@ -103,7 +114,7 @@ def test_openai_request_does_not_require_other_credentials(monkeypatch):
 
     response = call_agent(
         make_settings(openai_api_key="openai-test-key"),
-        provider="OpenAI",
+        provider=Provider.OPENAI,
     )
 
     assert response == {"reply": "openai reply"}

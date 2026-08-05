@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     groq_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
     tavily_api_key: SecretStr | None = None
-    backend_api_url: HttpUrl = HttpUrl("http://127.0.0.1:3003/chat")
+    backend_base_url: HttpUrl = HttpUrl("http://127.0.0.1:3003")
     backend_request_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
 
     model_config = SettingsConfigDict(
@@ -22,6 +22,17 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def backend_chat_url(self) -> str:
+        return self._backend_endpoint_url("chat")
+
+    @property
+    def backend_models_url(self) -> str:
+        return self._backend_endpoint_url("models")
+
+    def _backend_endpoint_url(self, path: str) -> str:
+        return f"{str(self.backend_base_url).rstrip('/')}/{path.lstrip('/')}"
 
 
 @lru_cache

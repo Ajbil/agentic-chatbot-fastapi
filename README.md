@@ -9,6 +9,7 @@ A learning-focused AI agent application built with a Streamlit frontend, a FastA
 ```text
 User
   -> Streamlit UI
+  -> FastAPI /models catalog
   -> FastAPI /chat endpoint
   -> LangChain agent
      -> Groq or OpenAI
@@ -76,10 +77,24 @@ Configuration is loaded from environment variables and the local `.env` file.
 | `GROQ_API_KEY` | A Groq model is selected | None |
 | `OPENAI_API_KEY` | An OpenAI model is selected | None |
 | `TAVILY_API_KEY` | Web search is enabled | None |
-| `BACKEND_API_URL` | Optional frontend override | `http://127.0.0.1:3003/chat` |
+| `BACKEND_BASE_URL` | Optional frontend override | `http://127.0.0.1:3003` |
 | `BACKEND_REQUEST_TIMEOUT_SECONDS` | Optional frontend override | `30` |
 
 Settings are validated centrally. Missing credentials fail only when a request uses the corresponding provider or tool.
+
+If you created `.env` before Checkpoint 03, replace `BACKEND_API_URL=http://127.0.0.1:3003/chat` with `BACKEND_BASE_URL=http://127.0.0.1:3003`. The frontend derives both `/models` and `/chat` from that base URL.
+
+## Supported models
+
+The backend owns the model catalog and exposes it through `GET /models`. The Streamlit UI loads this endpoint instead of maintaining its own model constants.
+
+| Provider | Model | Application key | Tool calling |
+|---|---|---|---|
+| Groq | GPT-OSS 20B | `groq-gpt-oss-20b` | Yes |
+| Groq | GPT-OSS 120B | `groq-gpt-oss-120b` | Yes |
+| OpenAI | GPT-4o mini | `openai-gpt-4o-mini` | Yes |
+
+GPT-OSS 20B is the default because it is the lower-cost Groq option in this curated learning catalog. Model availability changes over time, so catalog updates should be reviewed as operational changes.
 
 ## Tests
 
@@ -104,7 +119,7 @@ This repository is intentionally still a learning prototype. It does not yet pro
 
 ## Learning roadmap
 
-The next checkpoints will centralize the model registry and API contracts, expand test coverage, introduce real chat history, expose search evidence, and eventually build an explicit LangGraph workflow with evaluation and observability.
+The next checkpoints will establish canonical API request, response, and error contracts; introduce real chat history; expose search evidence; and eventually build an explicit LangGraph workflow with evaluation and observability.
 
 ## Learning journal
 
