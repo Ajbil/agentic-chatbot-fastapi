@@ -6,6 +6,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from config import Settings, get_settings
+from model_registry import ModelSpec, Provider
 
 
 class MissingConfigurationError(RuntimeError):
@@ -49,36 +50,33 @@ def _convert_messages_to_langchain(query):
     return langchain_messages or [HumanMessage(content="Hello")]
 
 
-# Step 2: create the agent
-system_prompt = "act as an AI agent who is smart and friendly"
-
-
 def get_response_from_ai_agent(
-    llm_id,
+    model: ModelSpec,
     query,
     allow_search,
     system_prompt,
-    provider,
     settings: Settings | None = None,
 ):
     app_settings = settings or get_settings()
-    provider_name = (provider or "").strip().lower()
 
-    if provider_name == "groq":
+    if model.provider == Provider.GROQ:
         provider_api_key = _require_secret(app_settings.groq_api_key, "GROQ_API_KEY")
-    elif provider_name == "openai":
-        provider_api_key = _require_secret(app_settings.openai_api_key, "OPENAI_API_KEY")
+    elif model.provider == Provider.OPENAI:
+        provider_api_key = _require_secret(
+            app_settings.openai_api_key,
+            "OPENAI_API_KEY",
+        )
     else:
-        raise ValueError(f"Unsupported provider: {provider}")
+        raise ValueError(f"Unsupported provider: {model.provider}")
 
     tavily_api_key = None
     if allow_search:
         tavily_api_key = _require_secret(app_settings.tavily_api_key, "TAVILY_API_KEY")
 
-    if provider_name == "groq":
-        llm = ChatGroq(model=llm_id, groq_api_key=provider_api_key)
+    if model.provider == Provider.GROQ:
+        llm = ChatGroq(model=model.model_id, groq_api_key=provider_api_key)
     else:
-        llm = ChatOpenAI(model=llm_id, api_key=provider_api_key)
+        llm = ChatOpenAI(model=model.model_id, api_key=provider_api_key)
 
     tools = (
         [TavilySearch(max_results=2, api_key=tavily_api_key)]
