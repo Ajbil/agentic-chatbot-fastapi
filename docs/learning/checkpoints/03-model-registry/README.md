@@ -134,7 +134,7 @@ The API-contract redesign deliberately remains separate. First establishing a re
 - Offline pytest suite: 35 tests passed locally.
 - Syntax compilation passed for settings, registry, frontend catalog, agent, backend, and frontend modules.
 - A clean `pipenv sync --dev` completed after stopping the project development server that held the Streamlit executable open on Windows.
-- GitHub Actions: Pending draft pull request.
+- [GitHub Actions run `30980282883`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/30980282883) completed successfully on the draft pull request using a clean Ubuntu/Python 3.12 environment.
 - No test contacts Groq, OpenAI, or Tavily.
 
 ## Senior-engineering lessons
