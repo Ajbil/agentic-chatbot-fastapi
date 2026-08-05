@@ -127,6 +127,7 @@ The API-contract redesign deliberately remains separate. First establishing a re
 - Made Streamlit load, validate, group, and display backend-provided models.
 - Extracted catalog transport from Streamlit rendering so it can be tested without running the UI.
 - Updated CI compilation and declared the current test-client dependency directly.
+- Regenerating the lock after adding `httpx2` also advanced packages allowed by existing `*` constraints, including Streamlit 1.60 to 1.61 and OpenAI 2.52 to 2.53; the complete suite and clean CI environment validated the resolved graph.
 
 ## Validation evidence
 
@@ -162,6 +163,10 @@ Runtime discovery can improve freshness, but also introduces authentication, lat
 ### Scope discipline is a senior skill
 
 Leaving the known HTTP 200 error defect for the next bounded checkpoint is intentional. A smaller pull request produces clearer review, testing, rollback, and learning evidence.
+
+### A lockfile is deterministic after resolution, not before it
+
+The lock reproduces one exact dependency graph. If the manifest permits every version, adding one dependency can cause the resolver to select newer unrelated packages. Review lockfile diffs as code, test the whole graph, and introduce intentional compatibility ranges when dependency policy becomes its own checkpoint.
 
 ## Applying this elsewhere
 
@@ -203,3 +208,4 @@ Leaving the known HTTP 200 error defect for the next bounded checkpoint is inten
 - Live provider smoke tests require separate credentials, budgets, triggers, and non-blocking failure policy.
 - Provider adapters are deferred until additional providers or divergent SDK behavior create a real substitution need.
 - Catalog caching, ETags, and offline frontend behavior are deferred until availability requirements justify them.
+- Replacing wildcard dependency constraints with a deliberate version-update policy remains a separate packaging checkpoint.
