@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Status | In review |
+| Status | Complete |
 | Date | 2026-08-05 |
 | Branch | `agent/model-registry` |
 | Pull request | [#3 — Centralize model catalog and frontend discovery](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/3) |
-| Implementation commit | [`0c95c43`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/0c95c43) |
+| Implementation commit | [`0c95c43`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/0c95c43); merged as [`5bded57`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/5bded57) |
 
 ## Objective
 

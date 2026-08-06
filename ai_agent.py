@@ -1,16 +1,21 @@
 from langchain.agents import create_agent
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_groq import ChatGroq
 from langchain_tavily import TavilySearch
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
+from api_contract import ChatMessage
 from config import Settings, get_settings
 from model_registry import ModelSpec, Provider
 
 
 class MissingConfigurationError(RuntimeError):
     """Raised when a requested feature is missing required configuration."""
+
+
+class InvalidAgentResponseError(RuntimeError):
+    """Raised when the agent completes without a usable assistant response."""
 
 
 def _require_secret(secret: SecretStr | None, variable_name: str) -> str:
@@ -22,41 +27,24 @@ def _require_secret(secret: SecretStr | None, variable_name: str) -> str:
     return secret.get_secret_value()
 
 
-def _convert_messages_to_langchain(query):
-    if isinstance(query, str):
-        return [HumanMessage(content=query)]
-
-    if isinstance(query, list) and query and all(isinstance(item, str) for item in query):
-        return [HumanMessage(content=item) for item in query]
-
+def _convert_messages_to_langchain(messages: list[ChatMessage]):
     langchain_messages = []
-    for item in query or []:
-        if hasattr(item, "role") and hasattr(item, "content"):
-            role = item.role
-            content = item.content
-        elif isinstance(item, dict):
-            role = item.get("role", "user")
-            content = item.get("content", "")
+    for message in messages:
+        if message.role == "user":
+            langchain_messages.append(HumanMessage(content=message.content))
         else:
-            continue
+            langchain_messages.append(AIMessage(content=message.content))
 
-        if role == "user":
-            langchain_messages.append(HumanMessage(content=content))
-        elif role == "assistant":
-            langchain_messages.append(AIMessage(content=content))
-        elif role == "system":
-            langchain_messages.append(SystemMessage(content=content))
-
-    return langchain_messages or [HumanMessage(content="Hello")]
+    return langchain_messages
 
 
 def get_response_from_ai_agent(
     model: ModelSpec,
-    query,
-    allow_search,
-    system_prompt,
+    messages: list[ChatMessage],
+    allow_search: bool,
+    system_prompt: str,
     settings: Settings | None = None,
-):
+) -> str:
     app_settings = settings or get_settings()
 
     if model.provider == Provider.GROQ:
@@ -87,16 +75,19 @@ def get_response_from_ai_agent(
     agent = create_agent(
         model=llm,
         tools=tools,
-        system_prompt=system_prompt or "act as an AI agent who is smart and friendly",
+        system_prompt=system_prompt,
     )
 
-    state = {"messages": _convert_messages_to_langchain(query)}
+    state = {"messages": _convert_messages_to_langchain(messages)}
     response = agent.invoke(state)
     messages = response.get("messages", [])
     ai_messages = [msg for msg in messages if isinstance(msg, AIMessage)]
 
     if ai_messages:
         latest_message = ai_messages[-1]
-        return {"reply": latest_message.content}
+        if isinstance(latest_message.content, str) and latest_message.content.strip():
+            return latest_message.content
 
-    return {"reply": ""}
+    raise InvalidAgentResponseError(
+        "The model provider did not return a usable assistant message."
+    )

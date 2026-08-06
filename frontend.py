@@ -1,8 +1,10 @@
-import requests
 import streamlit as st
+from pydantic import ValidationError
 
+from api_contract import ChatMessage, ChatRequest
 from config import get_settings
 from frontend_catalog import ModelCatalogError, fetch_model_catalog, models_for_provider
+from frontend_chat import ChatClientError, send_chat
 
 
 def main():
@@ -71,26 +73,30 @@ def main():
     )
 
     if st.button("Ask Agent!") and user_query.strip():
-        payload = {
-            "model_name": selected_model.model_id,
-            "model_provider": selected_model.provider.value,
-            "system_prompt": system_prompt,
-            "messages": [user_query],
+        request_values = {
+            "model_key": selected_model.key,
+            "messages": [ChatMessage(role="user", content=user_query)],
             "allow_search": allow_web_search,
         }
+        if system_prompt.strip():
+            request_values["system_prompt"] = system_prompt
 
-        response = requests.post(
-            settings.backend_chat_url,
-            json=payload,
-            timeout=settings.backend_request_timeout_seconds,
-        )
-        if response.status_code == 200:
-            response_data = response.json()
-            if "error" in response_data:
-                st.error(response_data["error"])
-            else:
-                st.subheader("Agent Response")
-                st.markdown(f"**Final Response:** {response_data}")
+        try:
+            chat_request = ChatRequest.model_validate(request_values)
+            chat_response = send_chat(
+                settings.backend_chat_url,
+                settings.backend_request_timeout_seconds,
+                chat_request,
+            )
+        except ValidationError as exc:
+            st.error("The chat request is invalid.")
+            st.caption(str(exc))
+        except ChatClientError as exc:
+            st.error(str(exc))
+            st.caption(f"Error code: {exc.code}")
+        else:
+            st.subheader("Agent Response")
+            st.markdown(chat_response.reply)
 
 
 if __name__ == "__main__":

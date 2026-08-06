@@ -1,10 +1,30 @@
 from fastapi.testclient import TestClient
 
 import backend
+from ai_agent import InvalidAgentResponseError, MissingConfigurationError
 from model_registry import DEFAULT_MODEL_KEY, ModelSpec, Provider
 
 
 client = TestClient(backend.app)
+
+
+def valid_chat_payload(**overrides):
+    payload = {
+        "model_key": "groq-gpt-oss-20b",
+        "system_prompt": "Be concise",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "allow_search": False,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def assert_error(response, status_code, code):
+    assert response.status_code == status_code
+    payload = response.json()
+    assert payload["error"]["code"] == code
+    assert isinstance(payload["error"]["message"], str)
+    assert payload["error"]["details"] == []
 
 
 def test_models_endpoint_returns_backend_owned_catalog():
@@ -28,40 +48,35 @@ def test_models_endpoint_returns_backend_owned_catalog():
     }
 
 
-def test_valid_chat_selection_delegates_with_resolved_model(monkeypatch):
+def test_valid_chat_request_returns_typed_response(monkeypatch):
     captured = {}
 
-    def fake_agent(model, query, allow_search, system_prompt):
+    def fake_agent(model, messages, allow_search, system_prompt):
         captured.update(
             model=model,
-            query=query,
+            messages=messages,
             allow_search=allow_search,
             system_prompt=system_prompt,
         )
-        return {"reply": "fake reply"}
+        return "fake reply"
 
     monkeypatch.setattr(backend, "get_response_from_ai_agent", fake_agent)
 
-    response = client.post(
-        "/chat",
-        json={
-            "model_name": "openai/gpt-oss-20b",
-            "model_provider": "GrOq",
-            "system_prompt": "Be concise",
-            "messages": ["Hello"],
-            "allow_search": False,
-        },
-    )
+    response = client.post("/chat", json=valid_chat_payload())
 
     assert response.status_code == 200
-    assert response.json() == {"reply": "fake reply"}
+    assert response.json() == {
+        "model_key": "groq-gpt-oss-20b",
+        "reply": "fake reply",
+    }
     assert captured["model"].key == "groq-gpt-oss-20b"
-    assert captured["query"] == ["Hello"]
+    assert captured["messages"][0].role == "user"
+    assert captured["messages"][0].content == "Hello"
     assert captured["allow_search"] is False
     assert captured["system_prompt"] == "Be concise"
 
 
-def test_mismatched_provider_and_model_is_rejected_before_agent(monkeypatch):
+def test_unknown_model_key_is_rejected_before_agent(monkeypatch):
     def unexpected_agent(*args, **kwargs):
         raise AssertionError("Agent must not run for an invalid model selection")
 
@@ -69,29 +84,11 @@ def test_mismatched_provider_and_model_is_rejected_before_agent(monkeypatch):
 
     response = client.post(
         "/chat",
-        json={
-            "model_name": "gpt-4o-mini",
-            "model_provider": "groq",
-            "messages": "Hello",
-        },
+        json=valid_chat_payload(model_key="unknown-model"),
     )
 
-    assert response.status_code == 200
-    assert "not supported by provider 'groq'" in response.json()["error"]
-
-
-def test_obsolete_model_is_rejected():
-    response = client.post(
-        "/chat",
-        json={
-            "model_name": "mixtral-8x7b-32768",
-            "model_provider": "groq",
-            "messages": "Hello",
-        },
-    )
-
-    assert response.status_code == 200
-    assert "mixtral-8x7b-32768" in response.json()["error"]
+    assert_error(response, 400, "unsupported_model")
+    assert "unknown-model" in response.json()["error"]["message"]
 
 
 def test_search_is_rejected_when_model_lacks_tool_calling(monkeypatch):
@@ -103,7 +100,7 @@ def test_search_is_rejected_when_model_lacks_tool_calling(monkeypatch):
         context_window_tokens=1_000,
         supports_tool_calling=False,
     )
-    monkeypatch.setattr(backend, "resolve_model", lambda provider, model_id: model_without_tools)
+    monkeypatch.setattr(backend, "get_model_by_key", lambda model_key: model_without_tools)
 
     def unexpected_agent(*args, **kwargs):
         raise AssertionError("Agent must not run with unsupported search tools")
@@ -112,15 +109,86 @@ def test_search_is_rejected_when_model_lacks_tool_calling(monkeypatch):
 
     response = client.post(
         "/chat",
+        json=valid_chat_payload(model_key="future-model", allow_search=True),
+    )
+
+    assert_error(response, 400, "unsupported_capability")
+
+
+def test_missing_server_configuration_returns_503(monkeypatch):
+    def missing_configuration(*args, **kwargs):
+        raise MissingConfigurationError("GROQ_API_KEY is required for this request.")
+
+    monkeypatch.setattr(backend, "get_response_from_ai_agent", missing_configuration)
+
+    response = client.post("/chat", json=valid_chat_payload())
+
+    assert_error(response, 503, "service_configuration_error")
+
+
+def test_invalid_agent_response_returns_502(monkeypatch):
+    def invalid_response(*args, **kwargs):
+        raise InvalidAgentResponseError("No usable assistant message was returned.")
+
+    monkeypatch.setattr(backend, "get_response_from_ai_agent", invalid_response)
+
+    response = client.post("/chat", json=valid_chat_payload())
+
+    assert_error(response, 502, "invalid_upstream_response")
+
+
+def test_validation_failure_returns_safe_structured_422():
+    response = client.post(
+        "/chat",
+        json=valid_chat_payload(messages=[{"role": "user", "content": "   "}]),
+    )
+
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "request_validation_error"
+    assert error["message"] == "The request body is invalid."
+    assert error["details"][0]["location"] == ["body", "messages", 0, "content"]
+    assert "input" not in error["details"][0]
+
+
+def test_legacy_chat_payload_is_rejected():
+    response = client.post(
+        "/chat",
         json={
-            "model_name": "future-model",
+            "model_name": "openai/gpt-oss-20b",
             "model_provider": "groq",
-            "messages": "Hello",
-            "allow_search": True,
+            "messages": ["Hello"],
         },
     )
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "error": "Model 'future-model' does not support search tools."
-    }
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "request_validation_error"
+
+
+def test_unexpected_error_returns_sanitized_500(monkeypatch):
+    def unexpected_failure(*args, **kwargs):
+        raise RuntimeError("sensitive internal diagnostic")
+
+    monkeypatch.setattr(backend, "get_response_from_ai_agent", unexpected_failure)
+    non_raising_client = TestClient(backend.app, raise_server_exceptions=False)
+
+    response = non_raising_client.post("/chat", json=valid_chat_payload())
+
+    assert_error(response, 500, "internal_server_error")
+    assert "sensitive" not in response.text
+
+
+def test_openapi_documents_chat_contract_and_error_responses():
+    operation = backend.app.openapi()["paths"]["/chat"]["post"]
+
+    request_schema = operation["requestBody"]["content"]["application/json"]["schema"]
+    assert request_schema["$ref"].endswith("/ChatRequest")
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"][
+        "$ref"
+    ].endswith("/ChatResponse")
+    assert set(operation["responses"]) == {"200", "400", "422", "500", "502", "503"}
+    for status_code in ("400", "422", "500", "502", "503"):
+        schema = operation["responses"][status_code]["content"]["application/json"][
+            "schema"
+        ]
+        assert schema["$ref"].endswith("/ErrorResponse")
