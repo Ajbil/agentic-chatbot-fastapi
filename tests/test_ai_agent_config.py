@@ -6,7 +6,12 @@ import pytest
 from langchain_core.messages import AIMessage
 
 import ai_agent
-from ai_agent import MissingConfigurationError, get_response_from_ai_agent
+from ai_agent import (
+    InvalidAgentResponseError,
+    MissingConfigurationError,
+    get_response_from_ai_agent,
+)
+from api_contract import ChatMessage
 from config import Settings
 from model_registry import ModelSpec, Provider
 
@@ -35,7 +40,7 @@ def make_model(provider=Provider.GROQ):
 def call_agent(settings, provider=Provider.GROQ, allow_search=False):
     return get_response_from_ai_agent(
         model=make_model(provider),
-        query="Hello",
+        messages=[ChatMessage(role="user", content="Hello")],
         allow_search=allow_search,
         system_prompt="Be helpful",
         settings=settings,
@@ -92,7 +97,7 @@ def test_groq_request_does_not_require_other_credentials(monkeypatch):
 
     response = call_agent(make_settings(groq_api_key="groq-test-key"))
 
-    assert response == {"reply": "fake reply"}
+    assert response == "fake reply"
     assert captured["model"] == "test-model"
     assert captured["api_key"] == "groq-test-key"
 
@@ -117,7 +122,7 @@ def test_openai_request_does_not_require_other_credentials(monkeypatch):
         provider=Provider.OPENAI,
     )
 
-    assert response == {"reply": "openai reply"}
+    assert response == "openai reply"
     assert captured["model"] == "test-model"
     assert captured["api_key"] == "openai-test-key"
 
@@ -143,5 +148,51 @@ def test_search_builds_tavily_tool_with_its_own_credential(monkeypatch):
         allow_search=True,
     )
 
-    assert response == {"reply": "searched reply"}
+    assert response == "searched reply"
     assert captured == {"max_results": 2, "api_key": "tavily-test-key"}
+
+
+def test_agent_converts_canonical_history(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(ai_agent, "ChatGroq", lambda **kwargs: object())
+
+    class FakeAgent:
+        def invoke(self, state):
+            captured["messages"] = state["messages"]
+            return {"messages": [AIMessage(content="follow-up reply")]}
+
+    monkeypatch.setattr(ai_agent, "create_agent", lambda **kwargs: FakeAgent())
+
+    response = get_response_from_ai_agent(
+        model=make_model(),
+        messages=[
+            ChatMessage(role="user", content="Question"),
+            ChatMessage(role="assistant", content="Answer"),
+            ChatMessage(role="user", content="Follow-up"),
+        ],
+        allow_search=False,
+        system_prompt="Be helpful",
+        settings=make_settings(groq_api_key="groq-test-key"),
+    )
+
+    assert response == "follow-up reply"
+    assert [message.type for message in captured["messages"]] == [
+        "human",
+        "ai",
+        "human",
+    ]
+
+
+@pytest.mark.parametrize("content", ["", "   ", [{"type": "text", "text": "Hi"}]])
+def test_agent_rejects_unusable_ai_response(monkeypatch, content):
+    monkeypatch.setattr(ai_agent, "ChatGroq", lambda **kwargs: object())
+
+    class FakeAgent:
+        def invoke(self, state):
+            return {"messages": [AIMessage(content=content)]}
+
+    monkeypatch.setattr(ai_agent, "create_agent", lambda **kwargs: FakeAgent())
+
+    with pytest.raises(InvalidAgentResponseError):
+        call_agent(make_settings(groq_api_key="groq-test-key"))

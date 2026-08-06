@@ -96,6 +96,47 @@ The backend owns the model catalog and exposes it through `GET /models`. The Str
 
 GPT-OSS 20B is the default because it is the lower-cost Groq option in this curated learning catalog. Model availability changes over time, so catalog updates should be reviewed as operational changes.
 
+## Chat API contract
+
+`POST /chat` accepts one canonical request shape. Clients identify a model through the stable application key returned by `GET /models`; provider names and provider-facing model IDs are backend implementation details.
+
+```json
+{
+  "model_key": "groq-gpt-oss-20b",
+  "system_prompt": "Act as a helpful AI Assistant",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Explain dependency injection."
+    }
+  ],
+  "allow_search": false
+}
+```
+
+A successful request returns HTTP `200` with a typed response:
+
+```json
+{
+  "model_key": "groq-gpt-oss-20b",
+  "reply": "Dependency injection means..."
+}
+```
+
+Handled failures return a non-`200` status and a consistent error envelope:
+
+```json
+{
+  "error": {
+    "code": "unsupported_model",
+    "message": "Unsupported model key: unknown-model",
+    "details": []
+  }
+}
+```
+
+FastAPI's interactive documentation at `http://127.0.0.1:3003/docs` contains the complete request, response, validation, and status-code schemas.
+
 ## Tests
 
 Run the offline test suite with:
@@ -115,11 +156,11 @@ The tests use fake providers and do not make Groq, OpenAI, or Tavily requests.
 
 ## Current limitations
 
-This repository is intentionally still a learning prototype. It does not yet provide conversation memory, streaming, source display, comprehensive test coverage, persistent storage, production-grade error handling, or an explicit custom LangGraph workflow.
+This repository is intentionally still a learning prototype. It does not yet provide conversation memory, streaming, source display, provider-specific failure normalization, persistent storage, production-grade observability, or an explicit custom LangGraph workflow.
 
 ## Learning roadmap
 
-The next checkpoints will establish canonical API request, response, and error contracts; introduce real chat history; expose search evidence; and eventually build an explicit LangGraph workflow with evaluation and observability.
+The next checkpoints will introduce real chat history, expose search evidence, and eventually build an explicit LangGraph workflow with evaluation and observability.
 
 ## Learning journal
 
