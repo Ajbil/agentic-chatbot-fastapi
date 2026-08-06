@@ -135,6 +135,7 @@ Chat history, streaming, source citations, authentication, and observability all
 - The unexpected-error test proves internal diagnostic text is not returned to the client.
 - Frontend-client tests cover timeouts, connection failures, malformed JSON, invalid success bodies, invalid error bodies, and structured backend errors.
 - The OpenAPI test proves the request, success, and error schemas are published as part of the service contract.
+- [GitHub Actions run `31077029056`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/31077029056) passed on the draft pull request in a clean Ubuntu/Python 3.12 environment.
 - No automated test contacts Groq, OpenAI, or Tavily.
 
 ## Senior-engineering lessons
