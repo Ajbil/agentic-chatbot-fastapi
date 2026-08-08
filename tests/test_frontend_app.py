@@ -1,0 +1,232 @@
+from pathlib import Path
+
+import requests
+from streamlit.testing.v1 import AppTest
+
+import frontend_catalog
+import frontend_chat
+
+
+FRONTEND_PATH = Path(__file__).resolve().parents[1] / "frontend.py"
+
+
+VALID_CATALOG = {
+    "default_model_key": "groq-gpt-oss-20b",
+    "models": [
+        {
+            "key": "groq-gpt-oss-20b",
+            "provider": "groq",
+            "model_id": "openai/gpt-oss-20b",
+            "display_name": "GPT-OSS 20B",
+            "context_window_tokens": 131072,
+            "supports_tool_calling": True,
+        },
+        {
+            "key": "openai-gpt-4o-mini",
+            "provider": "openai",
+            "model_id": "gpt-4o-mini",
+            "display_name": "GPT-4o mini",
+            "context_window_tokens": 128000,
+            "supports_tool_calling": True,
+        },
+    ],
+}
+
+
+class FakeResponse:
+    def __init__(self, status_code, payload):
+        self.status_code = status_code
+        self.payload = payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise AssertionError(f"Unexpected catalog status: {self.status_code}")
+
+    def json(self):
+        return self.payload
+
+
+def test_streamlit_chat_commits_history_and_locks_settings(monkeypatch):
+    captured_requests = []
+
+    monkeypatch.setattr(
+        frontend_catalog.requests,
+        "get",
+        lambda url, timeout: FakeResponse(200, VALID_CATALOG),
+    )
+
+    def fake_post(url, json, timeout):
+        captured_requests.append(json)
+        return FakeResponse(
+            200,
+            {
+                "model_key": json["model_key"],
+                "reply": f"Answer {len(captured_requests)}",
+            },
+        )
+
+    monkeypatch.setattr(frontend_chat.requests, "post", fake_post)
+
+    app = AppTest.from_file(FRONTEND_PATH, default_timeout=10).run()
+    assert len(app.chat_input) == 1
+
+    app.chat_input[0].set_value("First question").run()
+
+    assert len(app.chat_message) == 2
+    assert [message.markdown[0].value for message in app.chat_message] == [
+        "First question",
+        "Answer 1",
+    ]
+    assert app.radio[0].disabled is True
+    assert app.selectbox[0].disabled is True
+    assert app.text_area[0].disabled is True
+    assert app.checkbox[0].disabled is True
+
+    app.chat_input[0].set_value("Follow-up").run()
+
+    assert len(app.chat_message) == 4
+    assert [message["content"] for message in captured_requests[1]["messages"]] == [
+        "First question",
+        "Answer 1",
+        "Follow-up",
+    ]
+
+
+def test_provider_change_selects_a_valid_model_before_locking(monkeypatch):
+    captured_requests = []
+
+    monkeypatch.setattr(
+        frontend_catalog.requests,
+        "get",
+        lambda url, timeout: FakeResponse(200, VALID_CATALOG),
+    )
+
+    def fake_post(url, json, timeout):
+        captured_requests.append(json)
+        return FakeResponse(
+            200,
+            {"model_key": json["model_key"], "reply": "OpenAI answer"},
+        )
+
+    monkeypatch.setattr(frontend_chat.requests, "post", fake_post)
+
+    app = AppTest.from_file(FRONTEND_PATH, default_timeout=10).run()
+    app.radio[0].set_value("openai").run()
+
+    assert app.selectbox[0].value == "openai-gpt-4o-mini"
+
+    app.chat_input[0].set_value("Use the selected provider").run()
+
+    assert captured_requests[0]["model_key"] == "openai-gpt-4o-mini"
+    assert app.radio[0].disabled is True
+
+
+def test_streamlit_failure_is_retryable_and_not_committed(monkeypatch):
+    attempts = 0
+
+    monkeypatch.setattr(
+        frontend_catalog.requests,
+        "get",
+        lambda url, timeout: FakeResponse(200, VALID_CATALOG),
+    )
+
+    def fake_post(url, json, timeout):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return FakeResponse(
+                503,
+                {
+                    "error": {
+                        "code": "service_configuration_error",
+                        "message": "Provider configuration is unavailable.",
+                        "details": [],
+                    }
+                },
+            )
+        return FakeResponse(
+            200,
+            {"model_key": json["model_key"], "reply": "Recovered answer"},
+        )
+
+    monkeypatch.setattr(frontend_chat.requests, "post", fake_post)
+
+    app = AppTest.from_file(FRONTEND_PATH, default_timeout=10).run()
+    app.chat_input[0].set_value("Retry this question").run()
+
+    assert len(app.chat_message) == 1
+    assert app.chat_input[0].disabled is True
+    assert "Not added to conversation history" in app.chat_message[0].caption[0].value
+    assert app.error[0].value == "Provider configuration is unavailable."
+
+    retry_button = next(button for button in app.button if button.label == "Retry")
+    retry_button.click().run()
+
+    assert len(app.chat_message) == 2
+    assert [message.markdown[0].value for message in app.chat_message] == [
+        "Retry this question",
+        "Recovered answer",
+    ]
+    assert attempts == 2
+
+
+def test_new_chat_clears_history_and_unlocks_settings(monkeypatch):
+    monkeypatch.setattr(
+        frontend_catalog.requests,
+        "get",
+        lambda url, timeout: FakeResponse(200, VALID_CATALOG),
+    )
+    monkeypatch.setattr(
+        frontend_chat.requests,
+        "post",
+        lambda url, json, timeout: FakeResponse(
+            200,
+            {"model_key": json["model_key"], "reply": "Answer"},
+        ),
+    )
+
+    app = AppTest.from_file(FRONTEND_PATH, default_timeout=10).run()
+    app.chat_input[0].set_value("Question").run()
+    assert len(app.chat_message) == 2
+
+    new_chat_button = next(button for button in app.button if button.label == "New chat")
+    new_chat_button.click().run()
+
+    assert len(app.chat_message) == 0
+    assert app.radio[0].disabled is False
+    assert app.selectbox[0].disabled is False
+    assert app.text_area[0].disabled is False
+    assert app.checkbox[0].disabled is False
+
+
+def test_history_remains_visible_when_catalog_later_fails(monkeypatch):
+    catalog_available = True
+
+    def fake_get(url, timeout):
+        if not catalog_available:
+            raise requests.ConnectionError("backend offline")
+        return FakeResponse(200, VALID_CATALOG)
+
+    monkeypatch.setattr(frontend_catalog.requests, "get", fake_get)
+    monkeypatch.setattr(
+        frontend_chat.requests,
+        "post",
+        lambda url, json, timeout: FakeResponse(
+            200,
+            {"model_key": json["model_key"], "reply": "Saved answer"},
+        ),
+    )
+
+    app = AppTest.from_file(FRONTEND_PATH, default_timeout=10).run()
+    app.chat_input[0].set_value("Saved question").run()
+    catalog_available = False
+    app.run()
+
+    assert [message.markdown[0].value for message in app.chat_message] == [
+        "Saved question",
+        "Saved answer",
+    ]
+    assert app.chat_input[0].disabled is True
+    assert any(
+        "Could not load supported models" in error.value for error in app.error
+    )

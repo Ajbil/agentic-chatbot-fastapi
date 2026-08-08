@@ -137,6 +137,19 @@ Handled failures return a non-`200` status and a consistent error envelope:
 
 FastAPI's interactive documentation at `http://127.0.0.1:3003/docs` contains the complete request, response, validation, and status-code schemas.
 
+## Conversation behavior
+
+Streamlit keeps one temporary conversation in each browser session and resends the complete committed history with every request.
+
+- Use the sidebar to choose the model, system prompt, and web-search permission before the first message.
+- Conversation settings lock after the first submission so later turns keep the same behavior.
+- Successful user and assistant messages are committed together.
+- Failed user turns are kept outside model history and can be retried without retyping.
+- Use **New chat** to clear history and choose new settings.
+- At 50 messages, the UI stops instead of silently removing earlier context.
+
+This history is intentionally session-scoped. It is not stored in a database, shared between browser sessions, or guaranteed to survive a Streamlit restart. Token-aware history reduction is deferred to a later context-management checkpoint.
+
 ## Tests
 
 Run the offline test suite with:
@@ -151,16 +164,17 @@ The tests use fake providers and do not make Groq, OpenAI, or Tavily requests.
 
 - Choose between supported Groq and OpenAI models.
 - Define a custom system prompt.
-- Ask the agent a question through the Streamlit interface.
+- Continue a multi-turn conversation through the Streamlit chat interface.
 - Optionally allow the agent to search the web using Tavily.
+- Retry failed turns without adding incomplete exchanges to model history.
 
 ## Current limitations
 
-This repository is intentionally still a learning prototype. It does not yet provide conversation memory, streaming, source display, provider-specific failure normalization, persistent storage, production-grade observability, or an explicit custom LangGraph workflow.
+This repository is intentionally still a learning prototype. Conversation history is temporary and browser-session-owned; the project does not yet provide persistent memory, token-aware context reduction, streaming, source display, provider-specific failure normalization, production-grade observability, or an explicit custom LangGraph workflow.
 
 ## Learning roadmap
 
-The next checkpoints will introduce real chat history, expose search evidence, and eventually build an explicit LangGraph workflow with evaluation and observability.
+The next checkpoints will manage growing context, expose search evidence, and eventually build an explicit LangGraph workflow with evaluation and observability.
 
 ## Learning journal
 

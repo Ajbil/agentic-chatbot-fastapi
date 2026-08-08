@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Status | In review |
+| Status | Complete |
 | Date | 2026-08-06 |
 | Branch | `codex/chat-api-contract` |
 | Pull request | [#4 - Define canonical chat API contract](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/4) |
-| Implementation commit | [`91f4d5b`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/91f4d5b) |
+| Implementation commit | [`91f4d5b`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/91f4d5b); merged as [`6bb67e9`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/6bb67e9) |
 
 ## Objective
 

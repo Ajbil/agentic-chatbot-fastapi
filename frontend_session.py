@@ -1,0 +1,131 @@
+from dataclasses import dataclass, field
+
+from api_contract import (
+    DEFAULT_SYSTEM_PROMPT,
+    MAX_MESSAGES,
+    ChatMessage,
+    ChatRequest,
+)
+
+
+class ConversationStateError(RuntimeError):
+    """Raised when the UI attempts an invalid conversation transition."""
+
+
+@dataclass(frozen=True)
+class ConversationSettings:
+    """Settings whose meaning must remain stable for one conversation."""
+
+    model_key: str
+    system_prompt: str = DEFAULT_SYSTEM_PROMPT
+    allow_search: bool = False
+
+
+@dataclass(frozen=True)
+class TurnAttempt:
+    """The exact user turn and request being sent or retried."""
+
+    user_message: ChatMessage
+    request: ChatRequest
+
+
+@dataclass(frozen=True)
+class FailedTurn:
+    """A user turn that is visible but not committed to model history."""
+
+    user_message: ChatMessage
+    code: str
+    message: str
+    status_code: int | None = None
+
+
+@dataclass
+class ConversationState:
+    """Ephemeral, browser-session-owned conversation state."""
+
+    messages: list[ChatMessage] = field(default_factory=list)
+    settings: ConversationSettings | None = None
+    failed_turn: FailedTurn | None = None
+
+    @property
+    def settings_locked(self) -> bool:
+        return self.settings is not None
+
+    @property
+    def can_start_turn(self) -> bool:
+        return self.failed_turn is None and len(self.messages) + 2 <= MAX_MESSAGES
+
+    @property
+    def message_limit_reached(self) -> bool:
+        return len(self.messages) + 2 > MAX_MESSAGES
+
+    def begin_turn(
+        self,
+        content: str,
+        settings: ConversationSettings,
+    ) -> TurnAttempt:
+        if self.failed_turn is not None:
+            raise ConversationStateError(
+                "Retry or start a new chat before sending another message."
+            )
+        if self.message_limit_reached:
+            raise ConversationStateError(
+                "This conversation reached its 50-message limit. Start a new chat."
+            )
+        if self.settings is not None and settings != self.settings:
+            raise ConversationStateError(
+                "Conversation settings cannot change after the first turn."
+            )
+
+        user_message = ChatMessage(role="user", content=content)
+        request = self._build_request(settings, user_message)
+
+        if self.settings is None:
+            self.settings = settings
+
+        return TurnAttempt(user_message=user_message, request=request)
+
+    def retry_turn(self) -> TurnAttempt:
+        if self.failed_turn is None or self.settings is None:
+            raise ConversationStateError("There is no failed turn to retry.")
+
+        user_message = self.failed_turn.user_message
+        request = self._build_request(self.settings, user_message)
+        return TurnAttempt(user_message=user_message, request=request)
+
+    def commit_turn(self, attempt: TurnAttempt, reply: str) -> None:
+        assistant_message = ChatMessage(role="assistant", content=reply)
+        self.messages.extend((attempt.user_message, assistant_message))
+        self.failed_turn = None
+
+    def record_failure(
+        self,
+        attempt: TurnAttempt,
+        *,
+        code: str,
+        message: str,
+        status_code: int | None = None,
+    ) -> None:
+        self.failed_turn = FailedTurn(
+            user_message=attempt.user_message,
+            code=code,
+            message=message,
+            status_code=status_code,
+        )
+
+    def reset(self) -> None:
+        self.messages.clear()
+        self.settings = None
+        self.failed_turn = None
+
+    def _build_request(
+        self,
+        settings: ConversationSettings,
+        user_message: ChatMessage,
+    ) -> ChatRequest:
+        return ChatRequest(
+            model_key=settings.model_key,
+            system_prompt=settings.system_prompt,
+            messages=[*self.messages, user_message],
+            allow_search=settings.allow_search,
+        )

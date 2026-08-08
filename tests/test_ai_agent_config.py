@@ -11,7 +11,7 @@ from ai_agent import (
     MissingConfigurationError,
     get_response_from_ai_agent,
 )
-from api_contract import ChatMessage
+from api_contract import MAX_MESSAGE_CHARACTERS, ChatMessage
 from config import Settings
 from model_registry import ModelSpec, Provider
 
@@ -184,7 +184,15 @@ def test_agent_converts_canonical_history(monkeypatch):
     ]
 
 
-@pytest.mark.parametrize("content", ["", "   ", [{"type": "text", "text": "Hi"}]])
+@pytest.mark.parametrize(
+    "content",
+    [
+        "",
+        "   ",
+        [{"type": "text", "text": "Hi"}],
+        "x" * (MAX_MESSAGE_CHARACTERS + 1),
+    ],
+)
 def test_agent_rejects_unusable_ai_response(monkeypatch, content):
     monkeypatch.setattr(ai_agent, "ChatGroq", lambda **kwargs: object())
 

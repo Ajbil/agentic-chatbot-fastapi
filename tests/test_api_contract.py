@@ -6,6 +6,7 @@ from api_contract import (
     MAX_MESSAGES,
     MAX_SYSTEM_PROMPT_CHARACTERS,
     ChatRequest,
+    ChatResponse,
 )
 
 
@@ -75,3 +76,18 @@ def test_meaningful_whitespace_is_preserved():
     )
 
     assert request.messages[0].content == "  hello  "
+
+
+def test_success_reply_must_be_reusable_as_conversation_history():
+    response = ChatResponse(
+        model_key="groq-gpt-oss-20b",
+        reply="x" * MAX_MESSAGE_CHARACTERS,
+    )
+
+    assert len(response.reply) == MAX_MESSAGE_CHARACTERS
+
+    with pytest.raises(ValidationError):
+        ChatResponse(
+            model_key="groq-gpt-oss-20b",
+            reply="x" * (MAX_MESSAGE_CHARACTERS + 1),
+        )
