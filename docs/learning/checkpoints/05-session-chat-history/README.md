@@ -126,6 +126,7 @@ Context management, persistence, streaming, and source evidence all depend on fi
 - State tests cover settings locking, atomic commits, complete-history requests, retries, repeated failures, reset, isolation, and the 48/50-message boundary.
 - Contract and agent tests prove oversized replies cannot become successful unrepeatable history.
 - Streamlit tests exercise successful multi-turn chat, locked controls, retry recovery, New chat, and degraded catalog behavior.
+- [GitHub Actions run `31256374847`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/31256374847) passed on the draft pull request in a clean Ubuntu/Python 3.12 environment.
 - No test contacts Groq, OpenAI, or Tavily.
 
 ## Senior-engineering lessons
