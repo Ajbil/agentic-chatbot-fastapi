@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Status | In progress |
+| Status | In review |
 | Date | 2026-08-08 |
 | Branch | `codex/session-chat-history` |
-| Pull request | Pending |
-| Implementation commit | Pending |
+| Pull request | [#5 - Add session-owned chat history](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/5) |
+| Implementation commit | [`8cd17f0`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/8cd17f0) |
 
 ## Objective
 
