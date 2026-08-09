@@ -128,7 +128,7 @@ Search evidence, explicit workflows, and production observability would all beco
 - Contract tests prove malformed turn order and inconsistent context evidence are rejected.
 - Streamlit tests prove the full transcript remains visible while a truncation warning and usage estimate are shown.
 - No test contacts Groq, OpenAI, or Tavily.
-- Hosted GitHub Actions evidence will be added after the draft pull request is opened.
+- [GitHub Actions run `31310334290`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/31310334290) passed on the draft pull request in a clean Ubuntu/Python 3.12 environment.
 
 ## Senior-engineering lessons
 
