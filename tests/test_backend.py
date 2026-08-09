@@ -44,6 +44,7 @@ def test_models_endpoint_returns_backend_owned_catalog():
         "model_id": "openai/gpt-oss-20b",
         "display_name": "GPT-OSS 20B",
         "context_window_tokens": 131072,
+        "max_output_tokens": 4096,
         "supports_tool_calling": True,
     }
 
@@ -65,10 +66,12 @@ def test_valid_chat_request_returns_typed_response(monkeypatch):
     response = client.post("/chat", json=valid_chat_payload())
 
     assert response.status_code == 200
-    assert response.json() == {
-        "model_key": "groq-gpt-oss-20b",
-        "reply": "fake reply",
-    }
+    body = response.json()
+    assert body["model_key"] == "groq-gpt-oss-20b"
+    assert body["reply"] == "fake reply"
+    assert body["context"]["was_truncated"] is False
+    assert body["context"]["original_message_count"] == 1
+    assert body["context"]["included_message_count"] == 1
     assert captured["model"].key == "groq-gpt-oss-20b"
     assert captured["messages"][0].role == "user"
     assert captured["messages"][0].content == "Hello"
@@ -98,6 +101,7 @@ def test_search_is_rejected_when_model_lacks_tool_calling(monkeypatch):
         model_id="future-model",
         display_name="Future model",
         context_window_tokens=1_000,
+        max_output_tokens=128,
         supports_tool_calling=False,
     )
     monkeypatch.setattr(backend, "get_model_by_key", lambda model_key: model_without_tools)
@@ -113,6 +117,74 @@ def test_search_is_rejected_when_model_lacks_tool_calling(monkeypatch):
     )
 
     assert_error(response, 400, "unsupported_capability")
+
+
+def test_backend_sends_only_the_planned_recent_window(monkeypatch):
+    small_model = ModelSpec(
+        key="small-model",
+        provider=Provider.GROQ,
+        model_id="small-model",
+        display_name="Small model",
+        context_window_tokens=1_000,
+        max_output_tokens=128,
+        supports_tool_calling=True,
+    )
+    monkeypatch.setattr(backend, "get_model_by_key", lambda model_key: small_model)
+    captured = {}
+
+    def fake_agent(model, messages, allow_search, system_prompt):
+        captured["messages"] = messages
+        return "recent reply"
+
+    monkeypatch.setattr(backend, "get_response_from_ai_agent", fake_agent)
+    messages = [
+        {"role": "user", "content": "a" * 500},
+        {"role": "assistant", "content": "b" * 500},
+        {"role": "user", "content": "c" * 500},
+        {"role": "assistant", "content": "d" * 500},
+        {"role": "user", "content": "e" * 500},
+    ]
+
+    response = client.post(
+        "/chat",
+        json=valid_chat_payload(model_key="small-model", messages=messages),
+    )
+
+    assert response.status_code == 200
+    assert [item.content for item in captured["messages"]] == [
+        "c" * 500,
+        "d" * 500,
+        "e" * 500,
+    ]
+    assert response.json()["context"]["omitted_message_count"] == 2
+
+
+def test_oversized_latest_turn_is_rejected_before_agent(monkeypatch):
+    small_model = ModelSpec(
+        key="small-model",
+        provider=Provider.GROQ,
+        model_id="small-model",
+        display_name="Small model",
+        context_window_tokens=1_000,
+        max_output_tokens=128,
+        supports_tool_calling=True,
+    )
+    monkeypatch.setattr(backend, "get_model_by_key", lambda model_key: small_model)
+
+    def unexpected_agent(*args, **kwargs):
+        raise AssertionError("Agent must not run when the newest turn cannot fit")
+
+    monkeypatch.setattr(backend, "get_response_from_ai_agent", unexpected_agent)
+
+    response = client.post(
+        "/chat",
+        json=valid_chat_payload(
+            model_key="small-model",
+            messages=[{"role": "user", "content": "x" * 3_000}],
+        ),
+    )
+
+    assert_error(response, 413, "context_window_exceeded")
 
 
 def test_missing_server_configuration_returns_503(monkeypatch):
@@ -186,8 +258,16 @@ def test_openapi_documents_chat_contract_and_error_responses():
     assert operation["responses"]["200"]["content"]["application/json"]["schema"][
         "$ref"
     ].endswith("/ChatResponse")
-    assert set(operation["responses"]) == {"200", "400", "422", "500", "502", "503"}
-    for status_code in ("400", "422", "500", "502", "503"):
+    assert set(operation["responses"]) == {
+        "200",
+        "400",
+        "413",
+        "422",
+        "500",
+        "502",
+        "503",
+    }
+    for status_code in ("400", "413", "422", "500", "502", "503"):
         schema = operation["responses"][status_code]["content"]["application/json"][
             "schema"
         ]

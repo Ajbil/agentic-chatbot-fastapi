@@ -47,9 +47,57 @@ class ChatRequest(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def require_final_user_message(self):
+    def require_canonical_turn_order(self):
+        for index, message in enumerate(self.messages):
+            expected_role = "user" if index % 2 == 0 else "assistant"
+            if message.role != expected_role:
+                raise ValueError(
+                    "Messages must start with 'user', alternate between 'user' "
+                    "and 'assistant', and end with 'user'."
+                )
         if self.messages[-1].role != "user":
-            raise ValueError("The final message must have role 'user'.")
+            raise ValueError(
+                "Messages must start with 'user', alternate between 'user' "
+                "and 'assistant', and end with 'user'."
+            )
+        return self
+
+
+class ContextUsage(BaseModel):
+    """Estimated context-budget evidence for one successful chat request."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    estimation_method: Literal["langchain_approximate_v1"]
+    context_window_tokens: int = Field(gt=0)
+    reserved_output_tokens: int = Field(gt=0)
+    safety_margin_tokens: int = Field(gt=0)
+    input_budget_tokens: int = Field(gt=0)
+    estimated_full_input_tokens: int = Field(gt=0)
+    estimated_sent_input_tokens: int = Field(gt=0)
+    original_message_count: int = Field(gt=0)
+    included_message_count: int = Field(gt=0)
+    omitted_message_count: int = Field(ge=0)
+    was_truncated: bool
+
+    @model_validator(mode="after")
+    def require_internally_consistent_evidence(self):
+        if self.input_budget_tokens != (
+            self.context_window_tokens
+            - self.reserved_output_tokens
+            - self.safety_margin_tokens
+        ):
+            raise ValueError("Input budget does not match its model reservations.")
+        if self.included_message_count + self.omitted_message_count != (
+            self.original_message_count
+        ):
+            raise ValueError("Message counts do not reconcile.")
+        if self.was_truncated != (self.omitted_message_count > 0):
+            raise ValueError("Truncation flag does not match the omitted count.")
+        if self.estimated_sent_input_tokens > self.input_budget_tokens:
+            raise ValueError("Sent input estimate exceeds the input budget.")
+        if self.estimated_sent_input_tokens > self.estimated_full_input_tokens:
+            raise ValueError("Sent input estimate exceeds the full input estimate.")
         return self
 
 
@@ -60,6 +108,7 @@ class ChatResponse(BaseModel):
 
     model_key: str
     reply: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARACTERS)
+    context: ContextUsage
 
 
 class ValidationIssue(BaseModel):

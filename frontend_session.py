@@ -5,6 +5,8 @@ from api_contract import (
     MAX_MESSAGES,
     ChatMessage,
     ChatRequest,
+    ChatResponse,
+    ContextUsage,
 )
 
 
@@ -46,6 +48,7 @@ class ConversationState:
     messages: list[ChatMessage] = field(default_factory=list)
     settings: ConversationSettings | None = None
     failed_turn: FailedTurn | None = None
+    last_context_usage: ContextUsage | None = None
 
     @property
     def settings_locked(self) -> bool:
@@ -93,10 +96,16 @@ class ConversationState:
         request = self._build_request(self.settings, user_message)
         return TurnAttempt(user_message=user_message, request=request)
 
-    def commit_turn(self, attempt: TurnAttempt, reply: str) -> None:
-        assistant_message = ChatMessage(role="assistant", content=reply)
+    def commit_turn(self, attempt: TurnAttempt, response: ChatResponse) -> None:
+        if response.model_key != attempt.request.model_key:
+            raise ConversationStateError(
+                "The backend response model does not match the requested model."
+            )
+
+        assistant_message = ChatMessage(role="assistant", content=response.reply)
         self.messages.extend((attempt.user_message, assistant_message))
         self.failed_turn = None
+        self.last_context_usage = response.context
 
     def record_failure(
         self,
@@ -117,6 +126,7 @@ class ConversationState:
         self.messages.clear()
         self.settings = None
         self.failed_turn = None
+        self.last_context_usage = None
 
     def _build_request(
         self,

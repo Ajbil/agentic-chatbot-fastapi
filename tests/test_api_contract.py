@@ -7,7 +7,26 @@ from api_contract import (
     MAX_SYSTEM_PROMPT_CHARACTERS,
     ChatRequest,
     ChatResponse,
+    ContextUsage,
 )
+
+
+def context_usage(**overrides):
+    values = {
+        "estimation_method": "langchain_approximate_v1",
+        "context_window_tokens": 1_000,
+        "reserved_output_tokens": 128,
+        "safety_margin_tokens": 256,
+        "input_budget_tokens": 616,
+        "estimated_full_input_tokens": 20,
+        "estimated_sent_input_tokens": 20,
+        "original_message_count": 1,
+        "included_message_count": 1,
+        "omitted_message_count": 0,
+        "was_truncated": False,
+    }
+    values.update(overrides)
+    return ContextUsage(**values)
 
 
 def valid_request(**overrides):
@@ -35,6 +54,28 @@ def test_canonical_request_accepts_conversation_history():
         "assistant",
         "user",
     ]
+
+
+@pytest.mark.parametrize(
+    "messages",
+    [
+        [
+            {"role": "user", "content": "First"},
+            {"role": "user", "content": "Second"},
+        ],
+        [
+            {"role": "user", "content": "Question"},
+            {"role": "assistant", "content": "Answer"},
+        ],
+        [
+            {"role": "assistant", "content": "Answer"},
+            {"role": "user", "content": "Question"},
+        ],
+    ],
+)
+def test_noncanonical_turn_order_is_rejected(messages):
+    with pytest.raises(ValidationError, match="alternate"):
+        ChatRequest.model_validate(valid_request(messages=messages))
 
 
 @pytest.mark.parametrize(
@@ -82,6 +123,7 @@ def test_success_reply_must_be_reusable_as_conversation_history():
     response = ChatResponse(
         model_key="groq-gpt-oss-20b",
         reply="x" * MAX_MESSAGE_CHARACTERS,
+        context=context_usage(),
     )
 
     assert len(response.reply) == MAX_MESSAGE_CHARACTERS
@@ -90,4 +132,10 @@ def test_success_reply_must_be_reusable_as_conversation_history():
         ChatResponse(
             model_key="groq-gpt-oss-20b",
             reply="x" * (MAX_MESSAGE_CHARACTERS + 1),
+            context=context_usage(),
         )
+
+
+def test_context_usage_rejects_inconsistent_evidence():
+    with pytest.raises(ValidationError, match="Message counts do not reconcile"):
+        context_usage(original_message_count=3)

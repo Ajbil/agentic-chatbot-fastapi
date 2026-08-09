@@ -62,9 +62,17 @@ def get_response_from_ai_agent(
         tavily_api_key = _require_secret(app_settings.tavily_api_key, "TAVILY_API_KEY")
 
     if model.provider == Provider.GROQ:
-        llm = ChatGroq(model=model.model_id, groq_api_key=provider_api_key)
+        llm = ChatGroq(
+            model=model.model_id,
+            groq_api_key=provider_api_key,
+            max_tokens=model.max_output_tokens,
+        )
     else:
-        llm = ChatOpenAI(model=model.model_id, api_key=provider_api_key)
+        llm = ChatOpenAI(
+            model=model.model_id,
+            api_key=provider_api_key,
+            max_completion_tokens=model.max_output_tokens,
+        )
 
     tools = (
         [TavilySearch(max_results=2, api_key=tavily_api_key)]

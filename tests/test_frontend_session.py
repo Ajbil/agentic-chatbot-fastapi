@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from api_contract import MAX_MESSAGE_CHARACTERS, ChatMessage
+from api_contract import ChatMessage, ChatResponse, ContextUsage
 from frontend_session import (
     ConversationSettings,
     ConversationState,
@@ -26,6 +26,28 @@ def committed_exchange(number):
     ]
 
 
+def response(reply="Answer", model_key="groq-gpt-oss-20b", **usage_overrides):
+    usage = {
+        "estimation_method": "langchain_approximate_v1",
+        "context_window_tokens": 1_000,
+        "reserved_output_tokens": 128,
+        "safety_margin_tokens": 256,
+        "input_budget_tokens": 616,
+        "estimated_full_input_tokens": 20,
+        "estimated_sent_input_tokens": 20,
+        "original_message_count": 1,
+        "included_message_count": 1,
+        "omitted_message_count": 0,
+        "was_truncated": False,
+    }
+    usage.update(usage_overrides)
+    return ChatResponse(
+        model_key=model_key,
+        reply=reply,
+        context=ContextUsage(**usage),
+    )
+
+
 def test_first_turn_locks_settings_and_builds_canonical_request():
     state = ConversationState()
     conversation_settings = settings(allow_search=True)
@@ -44,19 +66,20 @@ def test_successful_turn_is_committed_as_an_atomic_pair():
     state = ConversationState()
     attempt = state.begin_turn("Question", settings())
 
-    state.commit_turn(attempt, "Answer")
+    state.commit_turn(attempt, response())
 
     assert [(message.role, message.content) for message in state.messages] == [
         ("user", "Question"),
         ("assistant", "Answer"),
     ]
     assert state.failed_turn is None
+    assert state.last_context_usage == response().context
 
 
 def test_follow_up_request_contains_complete_committed_history():
     state = ConversationState()
     first_attempt = state.begin_turn("First question", settings())
-    state.commit_turn(first_attempt, "First answer")
+    state.commit_turn(first_attempt, response("First answer"))
 
     second_attempt = state.begin_turn("Follow-up", settings())
 
@@ -127,7 +150,7 @@ def test_successful_retry_commits_exactly_one_exchange():
     state.record_failure(attempt, code="timeout", message="Try again")
 
     retry = state.retry_turn()
-    state.commit_turn(retry, "Recovered answer")
+    state.commit_turn(retry, response("Recovered answer"))
 
     assert [message.content for message in state.messages] == [
         "Please retry me",
@@ -155,7 +178,12 @@ def test_last_exchange_is_allowed_at_48_messages_then_limit_is_reached():
     assert state.can_start_turn is True
 
     final_attempt = state.begin_turn("Final question", settings())
-    state.commit_turn(final_attempt, "Final answer")
+    final_response = response(
+        "Final answer",
+        original_message_count=49,
+        included_message_count=49,
+    )
+    state.commit_turn(final_attempt, final_response)
 
     assert len(state.messages) == 50
     assert state.message_limit_reached is True
@@ -164,12 +192,15 @@ def test_last_exchange_is_allowed_at_48_messages_then_limit_is_reached():
         state.begin_turn("One too many", settings())
 
 
-def test_oversized_assistant_reply_cannot_corrupt_history():
+def test_mismatched_response_model_cannot_corrupt_history():
     state = ConversationState()
     attempt = state.begin_turn("Question", settings())
 
-    with pytest.raises(ValidationError):
-        state.commit_turn(attempt, "x" * (MAX_MESSAGE_CHARACTERS + 1))
+    with pytest.raises(ConversationStateError, match="does not match"):
+        state.commit_turn(
+            attempt,
+            response(model_key="openai-gpt-4o-mini"),
+        )
 
     assert state.messages == []
 
@@ -184,13 +215,14 @@ def test_reset_clears_only_conversation_state():
     assert state.messages == []
     assert state.settings is None
     assert state.failed_turn is None
+    assert state.last_context_usage is None
 
 
 def test_two_sessions_do_not_share_message_lists():
     first = ConversationState()
     second = ConversationState()
     attempt = first.begin_turn("Private question", settings())
-    first.commit_turn(attempt, "Private answer")
+    first.commit_turn(attempt, response("Private answer"))
 
     assert second.messages == []
     assert second.settings is None

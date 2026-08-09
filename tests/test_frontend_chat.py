@@ -6,6 +6,24 @@ from api_contract import ChatRequest
 from frontend_chat import ChatClientError, send_chat
 
 
+def context_payload(**overrides):
+    values = {
+        "estimation_method": "langchain_approximate_v1",
+        "context_window_tokens": 1_000,
+        "reserved_output_tokens": 128,
+        "safety_margin_tokens": 256,
+        "input_budget_tokens": 616,
+        "estimated_full_input_tokens": 20,
+        "estimated_sent_input_tokens": 20,
+        "original_message_count": 1,
+        "included_message_count": 1,
+        "omitted_message_count": 0,
+        "was_truncated": False,
+    }
+    values.update(overrides)
+    return values
+
+
 class FakeResponse:
     def __init__(self, status_code, payload):
         self.status_code = status_code
@@ -29,7 +47,11 @@ def test_frontend_sends_and_validates_canonical_contract(monkeypatch):
         captured.update(url=url, json=json, timeout=timeout)
         return FakeResponse(
             200,
-            {"model_key": "groq-gpt-oss-20b", "reply": "Typed reply"},
+            {
+                "model_key": "groq-gpt-oss-20b",
+                "reply": "Typed reply",
+                "context": context_payload(),
+            },
         )
 
     monkeypatch.setattr(frontend_chat.requests, "post", fake_post)
@@ -37,6 +59,7 @@ def test_frontend_sends_and_validates_canonical_contract(monkeypatch):
     response = send_chat("http://backend/chat", 12.5, make_request())
 
     assert response.reply == "Typed reply"
+    assert response.context.was_truncated is False
     assert captured["url"] == "http://backend/chat"
     assert captured["timeout"] == 12.5
     assert captured["json"] == {

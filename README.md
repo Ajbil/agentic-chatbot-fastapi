@@ -11,6 +11,7 @@ User
   -> Streamlit UI
   -> FastAPI /models catalog
   -> FastAPI /chat endpoint
+  -> deterministic context-budget planner
   -> LangChain agent
      -> Groq or OpenAI
      -> optional Tavily search
@@ -88,11 +89,11 @@ If you created `.env` before Checkpoint 03, replace `BACKEND_API_URL=http://127.
 
 The backend owns the model catalog and exposes it through `GET /models`. The Streamlit UI loads this endpoint instead of maintaining its own model constants.
 
-| Provider | Model | Application key | Tool calling |
-|---|---|---|---|
-| Groq | GPT-OSS 20B | `groq-gpt-oss-20b` | Yes |
-| Groq | GPT-OSS 120B | `groq-gpt-oss-120b` | Yes |
-| OpenAI | GPT-4o mini | `openai-gpt-4o-mini` | Yes |
+| Provider | Model | Application key | Context window | Output reserve | Tool calling |
+|---|---|---|---:|---:|---|
+| Groq | GPT-OSS 20B | `groq-gpt-oss-20b` | 131,072 | 4,096 | Yes |
+| Groq | GPT-OSS 120B | `groq-gpt-oss-120b` | 131,072 | 4,096 | Yes |
+| OpenAI | GPT-4o mini | `openai-gpt-4o-mini` | 128,000 | 4,096 | Yes |
 
 GPT-OSS 20B is the default because it is the lower-cost Groq option in this curated learning catalog. Model availability changes over time, so catalog updates should be reviewed as operational changes.
 
@@ -119,7 +120,20 @@ A successful request returns HTTP `200` with a typed response:
 ```json
 {
   "model_key": "groq-gpt-oss-20b",
-  "reply": "Dependency injection means..."
+  "reply": "Dependency injection means...",
+  "context": {
+    "estimation_method": "langchain_approximate_v1",
+    "context_window_tokens": 131072,
+    "reserved_output_tokens": 4096,
+    "safety_margin_tokens": 13108,
+    "input_budget_tokens": 113868,
+    "estimated_full_input_tokens": 42,
+    "estimated_sent_input_tokens": 42,
+    "original_message_count": 1,
+    "included_message_count": 1,
+    "omitted_message_count": 0,
+    "was_truncated": false
+  }
 }
 ```
 
@@ -146,9 +160,25 @@ Streamlit keeps one temporary conversation in each browser session and resends t
 - Successful user and assistant messages are committed together.
 - Failed user turns are kept outside model history and can be retried without retyping.
 - Use **New chat** to clear history and choose new settings.
-- At 50 messages, the UI stops instead of silently removing earlier context.
+- At 50 messages, the UI stops accepting new turns; this remains a structural API limit.
+- The UI keeps the full committed transcript even if the backend sends a smaller recent window to the model.
+- After each successful turn, the UI displays the estimated model-input usage and warns when older messages were omitted.
 
-This history is intentionally session-scoped. It is not stored in a database, shared between browser sessions, or guaranteed to survive a Streamlit restart. Token-aware history reduction is deferred to a later context-management checkpoint.
+This history is intentionally session-scoped. It is not stored in a database, shared between browser sessions, or guaranteed to survive a Streamlit restart.
+
+## Context-window policy
+
+The backend calculates an application input budget before constructing a provider client:
+
+```text
+input budget = model context window - output reserve - safety margin
+```
+
+The output reserve is 4,096 tokens for the current catalog. The safety margin is 10% of the model context window, with a minimum of 256 tokens for small test models. Input size is estimated locally with LangChain's provider-neutral approximation; the estimate is intentionally conservative evidence, not provider billing data.
+
+If the full system prompt and history fit, the backend sends all messages. Otherwise it always retains the newest user message, then prepends the newest complete user/assistant turns while they fit. It never sends half of a completed turn and never skips a recent oversized turn to recover less-relevant older turns. If the system prompt plus newest user message cannot fit, the API returns HTTP `413` with code `context_window_exceeded` before calling a model provider.
+
+The policy does not yet summarize removed history or identify important facts. Search-tool schemas and provider-specific serialization may also consume context; the safety margin reduces that operational risk but does not make the approximation exact.
 
 ## Tests
 
@@ -167,14 +197,15 @@ The tests use fake providers and do not make Groq, OpenAI, or Tavily requests.
 - Continue a multi-turn conversation through the Streamlit chat interface.
 - Optionally allow the agent to search the web using Tavily.
 - Retry failed turns without adding incomplete exchanges to model history.
+- Bound model input with deterministic recent-window selection and visible usage metadata.
 
 ## Current limitations
 
-This repository is intentionally still a learning prototype. Conversation history is temporary and browser-session-owned; the project does not yet provide persistent memory, token-aware context reduction, streaming, source display, provider-specific failure normalization, production-grade observability, or an explicit custom LangGraph workflow.
+This repository is intentionally still a learning prototype. Conversation history is temporary and browser-session-owned; the project does not yet provide persistent memory, context summarization, exact provider token accounting, streaming, source display, provider-specific failure normalization, production-grade observability, or an explicit custom LangGraph workflow.
 
 ## Learning roadmap
 
-The next checkpoints will manage growing context, expose search evidence, and eventually build an explicit LangGraph workflow with evaluation and observability.
+The next checkpoints will expose search evidence and eventually build an explicit LangGraph workflow with evaluation and observability.
 
 ## Learning journal
 
