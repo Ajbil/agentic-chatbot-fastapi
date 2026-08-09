@@ -46,4 +46,4 @@ jobs:
         run: python -m pipenv run python -m pytest -q
 
       - name: Compile application modules
-        run: python -m pipenv run python -m py_compile config.py model_registry.py api_contract.py frontend_catalog.py frontend_chat.py ai_agent.py backend.py frontend.py
+        run: python -m pipenv run python -m py_compile config.py model_registry.py api_contract.py frontend_catalog.py frontend_chat.py frontend_session.py ai_agent.py backend.py frontend.py

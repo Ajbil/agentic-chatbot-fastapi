@@ -5,7 +5,7 @@ from langchain_tavily import TavilySearch
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
-from api_contract import ChatMessage
+from api_contract import MAX_MESSAGE_CHARACTERS, ChatMessage
 from config import Settings, get_settings
 from model_registry import ModelSpec, Provider
 
@@ -86,6 +86,11 @@ def get_response_from_ai_agent(
     if ai_messages:
         latest_message = ai_messages[-1]
         if isinstance(latest_message.content, str) and latest_message.content.strip():
+            if len(latest_message.content) > MAX_MESSAGE_CHARACTERS:
+                raise InvalidAgentResponseError(
+                    "The model provider returned an assistant message that exceeds "
+                    f"the {MAX_MESSAGE_CHARACTERS}-character conversation limit."
+                )
             return latest_message.content
 
     raise InvalidAgentResponseError(

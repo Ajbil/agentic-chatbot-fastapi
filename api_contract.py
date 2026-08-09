@@ -59,7 +59,7 @@ class ChatResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model_key: str
-    reply: str = Field(min_length=1)
+    reply: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARACTERS)
 
 
 class ValidationIssue(BaseModel):

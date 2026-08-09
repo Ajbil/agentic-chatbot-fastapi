@@ -12,7 +12,8 @@ The journal is not a raw development transcript. Each checkpoint is a curated en
 | [01](checkpoints/01-configuration-foundation/README.md) | Deterministic, testable configuration | Complete | [PR #1](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/1), [merge commit `aa46fff`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/aa46fff) |
 | [02](checkpoints/02-continuous-integration/README.md) | Continuous integration quality gate | Complete | [PR #2](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/2), [merge commit `63ec2d2`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/63ec2d2) |
 | [03](checkpoints/03-model-registry/README.md) | Backend-owned model registry | Complete | [PR #3](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/3), [merge commit `5bded57`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/5bded57) |
-| [04](checkpoints/04-chat-api-contract/README.md) | Canonical chat API contract | In review | [Draft PR #4](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/4) |
+| [04](checkpoints/04-chat-api-contract/README.md) | Canonical chat API contract | Complete | [PR #4](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/4), [merge commit `6bb67e9`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/6bb67e9) |
+| [05](checkpoints/05-session-chat-history/README.md) | Session-owned chat history | In review | [Draft PR #5](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/5) |
 
 ## Reference material
 
