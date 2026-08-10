@@ -46,6 +46,26 @@ def _render_history(state: ConversationState) -> None:
             st.markdown(message.content)
 
 
+def _render_context_usage(state: ConversationState) -> None:
+    usage = state.last_context_usage
+    if usage is None:
+        return
+
+    st.caption(
+        "Latest model input estimate: "
+        f"{usage.estimated_sent_input_tokens:,} / {usage.input_budget_tokens:,} "
+        "tokens "
+        f"(output reserve: {usage.reserved_output_tokens:,}; "
+        f"safety margin: {usage.safety_margin_tokens:,})."
+    )
+    if usage.was_truncated:
+        st.warning(
+            f"For the latest answer, the backend omitted "
+            f"{usage.omitted_message_count} older message(s) from the model input. "
+            "The full transcript remains visible in this browser session."
+        )
+
+
 def _send_attempt(
     state: ConversationState,
     attempt: TurnAttempt,
@@ -55,7 +75,7 @@ def _send_attempt(
     with st.spinner("Waiting for the assistant..."):
         try:
             response = send_chat(backend_chat_url, timeout, attempt.request)
-            state.commit_turn(attempt, response.reply)
+            state.commit_turn(attempt, response)
         except ChatClientError as exc:
             state.record_failure(
                 attempt,
@@ -63,11 +83,11 @@ def _send_attempt(
                 message=str(exc),
                 status_code=exc.status_code,
             )
-        except ValidationError:
+        except (ValidationError, ConversationStateError):
             state.record_failure(
                 attempt,
-                code="invalid_assistant_message",
-                message="The assistant response cannot be added to conversation history.",
+                code="invalid_backend_response",
+                message="The backend response cannot be added to conversation history.",
             )
 
     st.rerun()
@@ -258,6 +278,7 @@ def main():
     catalog_available = catalog is not None and conversation_settings is not None
 
     _render_history(state)
+    _render_context_usage(state)
     _render_failed_turn(
         state,
         settings.backend_chat_url,

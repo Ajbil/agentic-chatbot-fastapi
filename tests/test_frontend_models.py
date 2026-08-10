@@ -14,6 +14,7 @@ VALID_CATALOG = {
             "model_id": "openai/gpt-oss-20b",
             "display_name": "GPT-OSS 20B",
             "context_window_tokens": 131072,
+            "max_output_tokens": 4096,
             "supports_tool_calling": True,
         },
         {
@@ -22,6 +23,7 @@ VALID_CATALOG = {
             "model_id": "gpt-4o-mini",
             "display_name": "GPT-4o mini",
             "context_window_tokens": 128000,
+            "max_output_tokens": 4096,
             "supports_tool_calling": True,
         },
     ],

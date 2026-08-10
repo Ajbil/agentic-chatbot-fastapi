@@ -19,6 +19,7 @@ VALID_CATALOG = {
             "model_id": "openai/gpt-oss-20b",
             "display_name": "GPT-OSS 20B",
             "context_window_tokens": 131072,
+            "max_output_tokens": 4096,
             "supports_tool_calling": True,
         },
         {
@@ -27,6 +28,7 @@ VALID_CATALOG = {
             "model_id": "gpt-4o-mini",
             "display_name": "GPT-4o mini",
             "context_window_tokens": 128000,
+            "max_output_tokens": 4096,
             "supports_tool_calling": True,
         },
     ],
@@ -46,6 +48,29 @@ class FakeResponse:
         return self.payload
 
 
+def chat_success(request, reply, *, truncated=False):
+    message_count = len(request["messages"])
+    omitted_count = 2 if truncated else 0
+    included_count = message_count - omitted_count
+    return {
+        "model_key": request["model_key"],
+        "reply": reply,
+        "context": {
+            "estimation_method": "langchain_approximate_v1",
+            "context_window_tokens": 131072,
+            "reserved_output_tokens": 4096,
+            "safety_margin_tokens": 13108,
+            "input_budget_tokens": 113868,
+            "estimated_full_input_tokens": 100,
+            "estimated_sent_input_tokens": 80 if truncated else 100,
+            "original_message_count": message_count,
+            "included_message_count": included_count,
+            "omitted_message_count": omitted_count,
+            "was_truncated": truncated,
+        },
+    }
+
+
 def test_streamlit_chat_commits_history_and_locks_settings(monkeypatch):
     captured_requests = []
 
@@ -59,10 +84,7 @@ def test_streamlit_chat_commits_history_and_locks_settings(monkeypatch):
         captured_requests.append(json)
         return FakeResponse(
             200,
-            {
-                "model_key": json["model_key"],
-                "reply": f"Answer {len(captured_requests)}",
-            },
+            chat_success(json, f"Answer {len(captured_requests)}"),
         )
 
     monkeypatch.setattr(frontend_chat.requests, "post", fake_post)
@@ -92,6 +114,45 @@ def test_streamlit_chat_commits_history_and_locks_settings(monkeypatch):
     ]
 
 
+def test_streamlit_preserves_full_transcript_and_discloses_backend_trimming(
+    monkeypatch,
+):
+    captured_requests = []
+    monkeypatch.setattr(
+        frontend_catalog.requests,
+        "get",
+        lambda url, timeout: FakeResponse(200, VALID_CATALOG),
+    )
+
+    def fake_post(url, json, timeout):
+        captured_requests.append(json)
+        return FakeResponse(
+            200,
+            chat_success(
+                json,
+                f"Answer {len(captured_requests)}",
+                truncated=len(captured_requests) == 2,
+            ),
+        )
+
+    monkeypatch.setattr(frontend_chat.requests, "post", fake_post)
+
+    app = AppTest.from_file(FRONTEND_PATH, default_timeout=10).run()
+    app.chat_input[0].set_value("First question").run()
+    app.chat_input[0].set_value("Follow-up").run()
+
+    assert [message.markdown[0].value for message in app.chat_message] == [
+        "First question",
+        "Answer 1",
+        "Follow-up",
+        "Answer 2",
+    ]
+    assert any(
+        "omitted 2 older message(s)" in warning.value for warning in app.warning
+    )
+    assert any("80 / 113,868 tokens" in caption.value for caption in app.caption)
+
+
 def test_provider_change_selects_a_valid_model_before_locking(monkeypatch):
     captured_requests = []
 
@@ -105,7 +166,7 @@ def test_provider_change_selects_a_valid_model_before_locking(monkeypatch):
         captured_requests.append(json)
         return FakeResponse(
             200,
-            {"model_key": json["model_key"], "reply": "OpenAI answer"},
+            chat_success(json, "OpenAI answer"),
         )
 
     monkeypatch.setattr(frontend_chat.requests, "post", fake_post)
@@ -146,7 +207,7 @@ def test_streamlit_failure_is_retryable_and_not_committed(monkeypatch):
             )
         return FakeResponse(
             200,
-            {"model_key": json["model_key"], "reply": "Recovered answer"},
+            chat_success(json, "Recovered answer"),
         )
 
     monkeypatch.setattr(frontend_chat.requests, "post", fake_post)
@@ -181,7 +242,7 @@ def test_new_chat_clears_history_and_unlocks_settings(monkeypatch):
         "post",
         lambda url, json, timeout: FakeResponse(
             200,
-            {"model_key": json["model_key"], "reply": "Answer"},
+            chat_success(json, "Answer"),
         ),
     )
 
@@ -213,7 +274,7 @@ def test_history_remains_visible_when_catalog_later_fails(monkeypatch):
         "post",
         lambda url, json, timeout: FakeResponse(
             200,
-            {"model_key": json["model_key"], "reply": "Saved answer"},
+            chat_success(json, "Saved answer"),
         ),
     )
 

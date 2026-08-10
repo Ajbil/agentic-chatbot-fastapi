@@ -16,6 +16,7 @@ from api_contract import (
     ErrorResponse,
     ValidationIssue,
 )
+from context_budget import ContextWindowExceededError, plan_context
 from model_registry import (
     ModelsResponse,
     UnsupportedModelError,
@@ -108,6 +109,7 @@ def models_endpoint():
     response_model=ChatResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Unsupported request choice"},
+        413: {"model": ErrorResponse, "description": "Context window exceeded"},
         422: {"model": ErrorResponse, "description": "Request validation failed"},
         502: {"model": ErrorResponse, "description": "Invalid upstream response"},
         503: {"model": ErrorResponse, "description": "Service configuration missing"},
@@ -130,9 +132,18 @@ def chat_endpoint(request: ChatRequest) -> ChatResponse:
         )
 
     try:
+        context_plan = plan_context(model, request.system_prompt, request.messages)
+    except ContextWindowExceededError as exc:
+        raise ApiContractError(
+            413,
+            "context_window_exceeded",
+            str(exc),
+        ) from exc
+
+    try:
         reply = get_response_from_ai_agent(
             model,
-            request.messages,
+            list(context_plan.messages),
             request.allow_search,
             request.system_prompt,
         )
@@ -149,7 +160,11 @@ def chat_endpoint(request: ChatRequest) -> ChatResponse:
             str(exc),
         ) from exc
 
-    return ChatResponse(model_key=model.key, reply=reply)
+    return ChatResponse(
+        model_key=model.key,
+        reply=reply,
+        context=context_plan.usage,
+    )
 
 
 if __name__ == "__main__":

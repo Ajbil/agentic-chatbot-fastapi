@@ -48,6 +48,7 @@ def test_catalog_response_exposes_required_capabilities():
         131_072,
         128_000,
     ]
+    assert [model.max_output_tokens for model in response.models] == [4096, 4096, 4096]
 
 
 def test_provider_lookup_normalizes_provider_but_not_model_id():
@@ -73,3 +74,16 @@ def test_invalid_or_mismatched_model_is_rejected(provider, model_id, message):
 def test_model_definitions_are_immutable():
     with pytest.raises(ValidationError):
         get_default_model().model_id = "changed-model"
+
+
+def test_output_reserve_must_be_smaller_than_context_window():
+    with pytest.raises(ValidationError, match="max_output_tokens"):
+        type(get_default_model())(
+            key="invalid-model",
+            provider="groq",
+            model_id="invalid-model",
+            display_name="Invalid model",
+            context_window_tokens=1_000,
+            max_output_tokens=1_000,
+            supports_tool_calling=True,
+        )

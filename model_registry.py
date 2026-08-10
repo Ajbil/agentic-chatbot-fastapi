@@ -18,7 +18,16 @@ class ModelSpec(BaseModel):
     model_id: str
     display_name: str
     context_window_tokens: int = Field(gt=0)
+    max_output_tokens: int = Field(gt=0)
     supports_tool_calling: bool
+
+    @model_validator(mode="after")
+    def validate_token_budget(self):
+        if self.max_output_tokens >= self.context_window_tokens:
+            raise ValueError(
+                "max_output_tokens must be smaller than context_window_tokens."
+            )
+        return self
 
 
 class ModelsResponse(BaseModel):
@@ -53,6 +62,7 @@ MODEL_CATALOG = (
         model_id="openai/gpt-oss-20b",
         display_name="GPT-OSS 20B",
         context_window_tokens=131_072,
+        max_output_tokens=4_096,
         supports_tool_calling=True,
     ),
     ModelSpec(
@@ -61,6 +71,7 @@ MODEL_CATALOG = (
         model_id="openai/gpt-oss-120b",
         display_name="GPT-OSS 120B",
         context_window_tokens=131_072,
+        max_output_tokens=4_096,
         supports_tool_calling=True,
     ),
     ModelSpec(
@@ -69,6 +80,7 @@ MODEL_CATALOG = (
         model_id="gpt-4o-mini",
         display_name="GPT-4o mini",
         context_window_tokens=128_000,
+        max_output_tokens=4_096,
         supports_tool_calling=True,
     ),
 )

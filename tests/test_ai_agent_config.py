@@ -33,6 +33,7 @@ def make_model(provider=Provider.GROQ):
         model_id="test-model",
         display_name="Test model",
         context_window_tokens=1_000,
+        max_output_tokens=128,
         supports_tool_calling=True,
     )
 
@@ -83,8 +84,7 @@ def test_groq_request_does_not_require_other_credentials(monkeypatch):
     captured = {}
 
     def fake_groq(**kwargs):
-        captured["model"] = kwargs["model"]
-        captured["api_key"] = kwargs["groq_api_key"]
+        captured.update(kwargs)
         return object()
 
     class FakeAgent:
@@ -99,15 +99,15 @@ def test_groq_request_does_not_require_other_credentials(monkeypatch):
 
     assert response == "fake reply"
     assert captured["model"] == "test-model"
-    assert captured["api_key"] == "groq-test-key"
+    assert captured["groq_api_key"] == "groq-test-key"
+    assert captured["max_tokens"] == 128
 
 
 def test_openai_request_does_not_require_other_credentials(monkeypatch):
     captured = {}
 
     def fake_openai(**kwargs):
-        captured["model"] = kwargs["model"]
-        captured["api_key"] = kwargs["api_key"]
+        captured.update(kwargs)
         return object()
 
     class FakeAgent:
@@ -125,6 +125,7 @@ def test_openai_request_does_not_require_other_credentials(monkeypatch):
     assert response == "openai reply"
     assert captured["model"] == "test-model"
     assert captured["api_key"] == "openai-test-key"
+    assert captured["max_completion_tokens"] == 128
 
 
 def test_search_builds_tavily_tool_with_its_own_credential(monkeypatch):
