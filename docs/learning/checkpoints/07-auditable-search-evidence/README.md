@@ -139,7 +139,7 @@ Streaming was the other logical roadmap candidate. Search provenance comes first
 - Session tests prove evidence ownership across multiple turns, derived message history, retry safety, reset, and permission matching.
 - Streamlit tests cover historical source display, unused search, and partial failure.
 - No automated test calls Groq, OpenAI, or Tavily.
-- Hosted GitHub Actions evidence will be added after the draft pull request opens.
+- [GitHub Actions run `31693444610`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/31693444610) passed on the draft pull request in a clean Ubuntu/Python 3.12 environment.
 
 ## Senior-engineering lessons
 
