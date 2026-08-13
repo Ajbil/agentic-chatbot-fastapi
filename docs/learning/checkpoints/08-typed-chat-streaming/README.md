@@ -118,7 +118,7 @@ Checkpoint 07 deliberately defined search execution and provenance before stream
 - Frontend tests cover timeout tuples, HTTP errors, partial errors, malformed ordering, premature EOF, and answer reconciliation.
 - Session and Streamlit tests preserve atomic commits, retry behavior, source ownership, and existing history behavior.
 - No automated test calls Groq, OpenAI, or Tavily.
-- `python -m pytest -q`: 134 tests pass in the locked environment.
+- `python -m pytest -q`: 135 tests pass in the locked environment.
 - The application modules compile successfully with Python 3.12.
 - [GitHub Actions run `31703830904`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/31703830904) passed on the draft pull request in a clean Ubuntu/Python 3.12 environment.
 
