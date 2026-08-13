@@ -8,6 +8,9 @@ from api_contract import (
     ChatRequest,
     ChatResponse,
     ContextUsage,
+    SearchEvidence,
+    SearchExecution,
+    SearchSource,
 )
 
 
@@ -124,6 +127,7 @@ def test_success_reply_must_be_reusable_as_conversation_history():
         model_key="groq-gpt-oss-20b",
         reply="x" * MAX_MESSAGE_CHARACTERS,
         context=context_usage(),
+        search=SearchEvidence(allowed=False, attempted=False),
     )
 
     assert len(response.reply) == MAX_MESSAGE_CHARACTERS
@@ -133,9 +137,78 @@ def test_success_reply_must_be_reusable_as_conversation_history():
             model_key="groq-gpt-oss-20b",
             reply="x" * (MAX_MESSAGE_CHARACTERS + 1),
             context=context_usage(),
+            search=SearchEvidence(allowed=False, attempted=False),
         )
 
 
 def test_context_usage_rejects_inconsistent_evidence():
     with pytest.raises(ValidationError, match="Message counts do not reconcile"):
         context_usage(original_message_count=3)
+
+
+def test_search_evidence_accepts_disabled_unused_and_successful_states():
+    disabled = SearchEvidence(allowed=False, attempted=False)
+    unused = SearchEvidence(allowed=True, attempted=False)
+    searched = SearchEvidence(
+        allowed=True,
+        attempted=True,
+        executions=(
+            SearchExecution(
+                query="latest release",
+                status="succeeded",
+                sources=(
+                    SearchSource(
+                        title="Official release",
+                        url="https://example.com/release",
+                        snippet="Release notes",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert disabled.executions == ()
+    assert unused.executions == ()
+    assert searched.executions[0].sources[0].title == "Official release"
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"allowed": True, "attempted": True},
+        {
+            "allowed": False,
+            "attempted": True,
+            "executions": [{"query": "news", "status": "failed"}],
+        },
+    ],
+)
+def test_search_evidence_rejects_contradictory_state(values):
+    with pytest.raises(ValidationError):
+        SearchEvidence.model_validate(values)
+
+
+def test_search_execution_status_must_match_source_presence():
+    source = SearchSource(title="Result", url="https://example.com")
+
+    with pytest.raises(ValidationError, match="successful search"):
+        SearchExecution(query="query", status="succeeded")
+    with pytest.raises(ValidationError, match="failed search"):
+        SearchExecution(query="query", status="failed", sources=(source,))
+
+
+def test_search_source_requires_an_http_url():
+    with pytest.raises(ValidationError):
+        SearchSource(title="Unsafe", url="javascript:alert(1)")
+
+
+def test_search_evidence_limits_executions():
+    with pytest.raises(ValidationError):
+        SearchEvidence(
+            allowed=True,
+            attempted=True,
+            executions=tuple(
+                SearchExecution(query=f"query {number}", status="failed")
+                for number in range(4)
+            ),
+        )

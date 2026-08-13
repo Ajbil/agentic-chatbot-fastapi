@@ -48,7 +48,7 @@ class FakeResponse:
         return self.payload
 
 
-def chat_success(request, reply, *, truncated=False):
+def chat_success(request, reply, *, truncated=False, search=None):
     message_count = len(request["messages"])
     omitted_count = 2 if truncated else 0
     included_count = message_count - omitted_count
@@ -67,6 +67,12 @@ def chat_success(request, reply, *, truncated=False):
             "included_message_count": included_count,
             "omitted_message_count": omitted_count,
             "was_truncated": truncated,
+        },
+        "search": search
+        or {
+            "allowed": request["allow_search"],
+            "attempted": False,
+            "executions": [],
         },
     }
 
@@ -151,6 +157,99 @@ def test_streamlit_preserves_full_transcript_and_discloses_backend_trimming(
         "omitted 2 older message(s)" in warning.value for warning in app.warning
     )
     assert any("80 / 113,868 tokens" in caption.value for caption in app.caption)
+
+
+def test_streamlit_keeps_web_sources_with_their_answer(monkeypatch):
+    captured_requests = []
+    monkeypatch.setattr(
+        frontend_catalog.requests,
+        "get",
+        lambda url, timeout: FakeResponse(200, VALID_CATALOG),
+    )
+
+    def fake_post(url, json, timeout):
+        captured_requests.append(json)
+        if len(captured_requests) == 1:
+            search = {
+                "allowed": True,
+                "attempted": True,
+                "executions": [
+                    {
+                        "query": "latest release",
+                        "status": "succeeded",
+                        "sources": [
+                            {
+                                "title": "Official release",
+                                "url": "https://example.com/release",
+                                "snippet": "Release evidence",
+                            }
+                        ],
+                    },
+                    {
+                        "query": "secondary query",
+                        "status": "failed",
+                        "sources": [],
+                    },
+                ],
+            }
+        else:
+            search = {"allowed": True, "attempted": False, "executions": []}
+        return FakeResponse(
+            200,
+            chat_success(json, f"Answer {len(captured_requests)}", search=search),
+        )
+
+    monkeypatch.setattr(frontend_chat.requests, "post", fake_post)
+
+    app = AppTest.from_file(FRONTEND_PATH, default_timeout=10).run()
+    app.checkbox[0].check().run()
+    app.chat_input[0].set_value("Current question").run()
+    app.chat_input[0].set_value("Follow-up").run()
+
+    assert [item.label for item in app.expander] == ["Web sources"]
+    assert app.text[0].value == "Release evidence"
+    assert any("latest release" in caption.value for caption in app.caption)
+    assert any("additional web search" in warning.value for warning in app.warning)
+    assert any("available but not used" in caption.value for caption in app.caption)
+
+
+def test_streamlit_discloses_total_search_failure(monkeypatch):
+    monkeypatch.setattr(
+        frontend_catalog.requests,
+        "get",
+        lambda url, timeout: FakeResponse(200, VALID_CATALOG),
+    )
+    monkeypatch.setattr(
+        frontend_chat.requests,
+        "post",
+        lambda url, json, timeout: FakeResponse(
+            200,
+            chat_success(
+                json,
+                "Unverified answer",
+                search={
+                    "allowed": True,
+                    "attempted": True,
+                    "executions": [
+                        {
+                            "query": "unavailable information",
+                            "status": "failed",
+                            "sources": [],
+                        }
+                    ],
+                },
+            ),
+        ),
+    )
+
+    app = AppTest.from_file(FRONTEND_PATH, default_timeout=10).run()
+    app.checkbox[0].check().run()
+    app.chat_input[0].set_value("Question").run()
+
+    assert any(
+        "returned no usable evidence" in warning.value for warning in app.warning
+    )
+    assert len(app.expander) == 0
 
 
 def test_provider_change_selects_a_valid_model_before_locking(monkeypatch):

@@ -7,6 +7,7 @@ from api_contract import (
     ChatRequest,
     ChatResponse,
     ContextUsage,
+    SearchEvidence,
 )
 
 
@@ -41,14 +42,35 @@ class FailedTurn:
     status_code: int | None = None
 
 
+@dataclass(frozen=True)
+class CommittedTurn:
+    """One successful exchange and the evidence produced with its answer."""
+
+    user_message: ChatMessage
+    assistant_message: ChatMessage
+    context: ContextUsage
+    search: SearchEvidence
+
+
 @dataclass
 class ConversationState:
     """Ephemeral, browser-session-owned conversation state."""
 
-    messages: list[ChatMessage] = field(default_factory=list)
+    turns: list[CommittedTurn] = field(default_factory=list)
     settings: ConversationSettings | None = None
     failed_turn: FailedTurn | None = None
-    last_context_usage: ContextUsage | None = None
+
+    @property
+    def messages(self) -> list[ChatMessage]:
+        return [
+            message
+            for turn in self.turns
+            for message in (turn.user_message, turn.assistant_message)
+        ]
+
+    @property
+    def last_context_usage(self) -> ContextUsage | None:
+        return self.turns[-1].context if self.turns else None
 
     @property
     def settings_locked(self) -> bool:
@@ -101,11 +123,21 @@ class ConversationState:
             raise ConversationStateError(
                 "The backend response model does not match the requested model."
             )
+        if response.search.allowed != attempt.request.allow_search:
+            raise ConversationStateError(
+                "The backend search evidence does not match the request permission."
+            )
 
         assistant_message = ChatMessage(role="assistant", content=response.reply)
-        self.messages.extend((attempt.user_message, assistant_message))
+        self.turns.append(
+            CommittedTurn(
+                user_message=attempt.user_message,
+                assistant_message=assistant_message,
+                context=response.context,
+                search=response.search,
+            )
+        )
         self.failed_turn = None
-        self.last_context_usage = response.context
 
     def record_failure(
         self,
@@ -123,10 +155,9 @@ class ConversationState:
         )
 
     def reset(self) -> None:
-        self.messages.clear()
+        self.turns.clear()
         self.settings = None
         self.failed_turn = None
-        self.last_context_usage = None
 
     def _build_request(
         self,

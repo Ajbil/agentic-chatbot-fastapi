@@ -2,11 +2,12 @@
 
 | Field | Value |
 |---|---|
-| Status | In review |
+| Status | Complete |
 | Date | 2026-08-09 |
 | Branch | `codex/context-window-management` |
 | Pull request | [#6 - Add transparent context-window management](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/6) |
 | Implementation commit | [`7688fea`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/7688fea) |
+| Merge commit | [`43f8807`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/43f8807) |
 
 ## Objective
 

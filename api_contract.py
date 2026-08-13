@@ -1,12 +1,16 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 DEFAULT_SYSTEM_PROMPT = "Act as a helpful AI Assistant"
 MAX_MESSAGES = 50
 MAX_MESSAGE_CHARACTERS = 20_000
 MAX_SYSTEM_PROMPT_CHARACTERS = 4_000
+MAX_SEARCH_EXECUTIONS = 3
+MAX_SEARCH_QUERY_CHARACTERS = 500
+MAX_SOURCE_TITLE_CHARACTERS = 300
+MAX_SOURCE_SNIPPET_CHARACTERS = 1_000
 
 
 class ChatMessage(BaseModel):
@@ -101,6 +105,73 @@ class ContextUsage(BaseModel):
         return self
 
 
+class SearchSource(BaseModel):
+    """One untrusted web result returned by the configured search provider."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    title: str = Field(min_length=1, max_length=MAX_SOURCE_TITLE_CHARACTERS)
+    url: AnyHttpUrl
+    snippet: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_SOURCE_SNIPPET_CHARACTERS,
+    )
+
+    @field_validator("title", "snippet")
+    @classmethod
+    def reject_blank_source_text(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("Source text must not be blank.")
+        return value.strip() if value is not None else None
+
+
+class SearchExecution(BaseModel):
+    """One model-requested web search and its normalized result evidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    query: str = Field(min_length=1, max_length=MAX_SEARCH_QUERY_CHARACTERS)
+    status: Literal["succeeded", "failed"]
+    sources: tuple[SearchSource, ...] = Field(default=(), max_length=2)
+
+    @field_validator("query")
+    @classmethod
+    def reject_blank_query(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Search query must not be blank.")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def require_sources_only_for_success(self):
+        if self.status == "succeeded" and not self.sources:
+            raise ValueError("A successful search must contain at least one source.")
+        if self.status == "failed" and self.sources:
+            raise ValueError("A failed search must not contain sources.")
+        return self
+
+
+class SearchEvidence(BaseModel):
+    """Auditable search permission, execution, and retrieval evidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    allowed: bool
+    attempted: bool
+    executions: tuple[SearchExecution, ...] = Field(
+        default=(),
+        max_length=MAX_SEARCH_EXECUTIONS,
+    )
+
+    @model_validator(mode="after")
+    def require_consistent_search_state(self):
+        if self.attempted != bool(self.executions):
+            raise ValueError("Search attempted must match whether executions exist.")
+        if not self.allowed and self.attempted:
+            raise ValueError("Search cannot be attempted when it was not allowed.")
+        return self
+
+
 class ChatResponse(BaseModel):
     """A successful response from POST /chat."""
 
@@ -109,6 +180,7 @@ class ChatResponse(BaseModel):
     model_key: str
     reply: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARACTERS)
     context: ContextUsage
+    search: SearchEvidence
 
 
 class ValidationIssue(BaseModel):

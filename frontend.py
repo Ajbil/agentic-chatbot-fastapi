@@ -5,6 +5,7 @@ from api_contract import (
     DEFAULT_SYSTEM_PROMPT,
     MAX_MESSAGE_CHARACTERS,
     MAX_SYSTEM_PROMPT_CHARACTERS,
+    SearchEvidence,
 )
 from config import get_settings
 from frontend_catalog import ModelCatalogError, fetch_model_catalog, models_for_provider
@@ -41,9 +42,45 @@ def _new_chat() -> None:
 
 
 def _render_history(state: ConversationState) -> None:
-    for message in state.messages:
-        with st.chat_message(message.role):
-            st.markdown(message.content)
+    for turn_index, turn in enumerate(state.turns, start=1):
+        with st.chat_message("user"):
+            st.markdown(turn.user_message.content)
+        with st.chat_message("assistant"):
+            st.markdown(turn.assistant_message.content)
+            _render_search_evidence(turn.search, turn_index)
+
+
+def _render_search_evidence(evidence: SearchEvidence, turn_index: int) -> None:
+    if not evidence.allowed:
+        return
+    if not evidence.attempted:
+        st.caption("Web search was available but not used for this answer.")
+        return
+
+    successful = [item for item in evidence.executions if item.status == "succeeded"]
+    failed_count = len(evidence.executions) - len(successful)
+
+    if successful:
+        with st.expander("Web sources"):
+            for execution_index, execution in enumerate(successful, start=1):
+                st.caption(f"Search {execution_index}: {execution.query}")
+                for source_index, source in enumerate(execution.sources, start=1):
+                    st.link_button(
+                        source.title,
+                        str(source.url),
+                        key=f"source-{turn_index}-{execution_index}-{source_index}",
+                    )
+                    if source.snippet:
+                        st.text(source.snippet)
+
+    if failed_count:
+        if successful:
+            st.warning(
+                f"{failed_count} additional web search attempt(s) returned no "
+                "usable evidence."
+            )
+        else:
+            st.warning("Web search was attempted but returned no usable evidence.")
 
 
 def _render_context_usage(state: ConversationState) -> None:
