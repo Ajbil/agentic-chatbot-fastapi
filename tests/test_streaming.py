@@ -103,6 +103,7 @@ def test_frontend_validates_stream_and_closes_response(monkeypatch):
         ([successful_events()[0], {**successful_events()[2], "sequence": 4}], "sequence"),
         (successful_events()[:-1], "terminal"),
         (successful_events("different"), "did not match"),
+        (successful_events() + [{"version": 1, "type": "status", "sequence": 6, "stage": "finalizing"}], "continued"),
     ],
 )
 def test_frontend_rejects_broken_stream_protocol(monkeypatch, events, message):

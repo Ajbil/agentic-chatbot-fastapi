@@ -116,6 +116,12 @@ def stream_chat(
             for line in lines:
                 if not line:
                     continue
+                if terminal:
+                    raise ChatClientError(
+                        "The backend stream continued after its terminal event.",
+                        code="invalid_stream_response",
+                        partial_reply=assembled_reply,
+                    )
                 try:
                     event = CHAT_STREAM_EVENT_ADAPTER.validate_json(line)
                 except (ValueError, ValidationError) as exc:
@@ -170,14 +176,14 @@ def stream_chat(
                         partial_reply=assembled_reply,
                     )
                 yield event
-                if terminal:
-                    return
         except requests.RequestException as exc:
             raise ChatClientError(
                 f"The backend chat stream failed: {exc}",
                 partial_reply=assembled_reply,
             ) from exc
 
+        if terminal:
+            return
         raise ChatClientError(
             "The backend stream ended before a terminal event.",
             code="invalid_stream_response",
