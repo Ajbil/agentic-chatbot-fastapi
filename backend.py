@@ -5,6 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from ai_agent import (
+    AgentToolLimitExceededError,
     InvalidAgentResponseError,
     MissingConfigurationError,
     get_response_from_ai_agent,
@@ -141,7 +142,7 @@ def chat_endpoint(request: ChatRequest) -> ChatResponse:
         ) from exc
 
     try:
-        reply = get_response_from_ai_agent(
+        agent_outcome = get_response_from_ai_agent(
             model,
             list(context_plan.messages),
             request.allow_search,
@@ -159,11 +160,18 @@ def chat_endpoint(request: ChatRequest) -> ChatResponse:
             "invalid_upstream_response",
             str(exc),
         ) from exc
+    except AgentToolLimitExceededError as exc:
+        raise ApiContractError(
+            502,
+            "agent_tool_limit_exceeded",
+            str(exc),
+        ) from exc
 
     return ChatResponse(
         model_key=model.key,
-        reply=reply,
+        reply=agent_outcome.reply,
         context=context_plan.usage,
+        search=agent_outcome.search,
     )
 
 

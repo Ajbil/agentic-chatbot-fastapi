@@ -1,7 +1,13 @@
 from fastapi.testclient import TestClient
 
 import backend
-from ai_agent import InvalidAgentResponseError, MissingConfigurationError
+from ai_agent import (
+    AgentOutcome,
+    AgentToolLimitExceededError,
+    InvalidAgentResponseError,
+    MissingConfigurationError,
+)
+from api_contract import SearchEvidence
 from model_registry import DEFAULT_MODEL_KEY, ModelSpec, Provider
 
 
@@ -59,7 +65,10 @@ def test_valid_chat_request_returns_typed_response(monkeypatch):
             allow_search=allow_search,
             system_prompt=system_prompt,
         )
-        return "fake reply"
+        return AgentOutcome(
+            reply="fake reply",
+            search=SearchEvidence(allowed=False, attempted=False),
+        )
 
     monkeypatch.setattr(backend, "get_response_from_ai_agent", fake_agent)
 
@@ -72,6 +81,11 @@ def test_valid_chat_request_returns_typed_response(monkeypatch):
     assert body["context"]["was_truncated"] is False
     assert body["context"]["original_message_count"] == 1
     assert body["context"]["included_message_count"] == 1
+    assert body["search"] == {
+        "allowed": False,
+        "attempted": False,
+        "executions": [],
+    }
     assert captured["model"].key == "groq-gpt-oss-20b"
     assert captured["messages"][0].role == "user"
     assert captured["messages"][0].content == "Hello"
@@ -134,7 +148,10 @@ def test_backend_sends_only_the_planned_recent_window(monkeypatch):
 
     def fake_agent(model, messages, allow_search, system_prompt):
         captured["messages"] = messages
-        return "recent reply"
+        return AgentOutcome(
+            reply="recent reply",
+            search=SearchEvidence(allowed=False, attempted=False),
+        )
 
     monkeypatch.setattr(backend, "get_response_from_ai_agent", fake_agent)
     messages = [
@@ -207,6 +224,20 @@ def test_invalid_agent_response_returns_502(monkeypatch):
     response = client.post("/chat", json=valid_chat_payload())
 
     assert_error(response, 502, "invalid_upstream_response")
+
+
+def test_agent_tool_limit_returns_safe_502(monkeypatch):
+    def tool_limit(*args, **kwargs):
+        raise AgentToolLimitExceededError("At most three searches are allowed.")
+
+    monkeypatch.setattr(backend, "get_response_from_ai_agent", tool_limit)
+
+    response = client.post(
+        "/chat",
+        json=valid_chat_payload(allow_search=True),
+    )
+
+    assert_error(response, 502, "agent_tool_limit_exceeded")
 
 
 def test_validation_failure_returns_safe_structured_422():

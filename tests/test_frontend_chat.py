@@ -50,8 +50,9 @@ def test_frontend_sends_and_validates_canonical_contract(monkeypatch):
             {
                 "model_key": "groq-gpt-oss-20b",
                 "reply": "Typed reply",
-                "context": context_payload(),
-            },
+                    "context": context_payload(),
+                    "search": {"allowed": False, "attempted": False, "executions": []},
+                },
         )
 
     monkeypatch.setattr(frontend_chat.requests, "post", fake_post)
@@ -60,6 +61,7 @@ def test_frontend_sends_and_validates_canonical_contract(monkeypatch):
 
     assert response.reply == "Typed reply"
     assert response.context.was_truncated is False
+    assert response.search.attempted is False
     assert captured["url"] == "http://backend/chat"
     assert captured["timeout"] == 12.5
     assert captured["json"] == {

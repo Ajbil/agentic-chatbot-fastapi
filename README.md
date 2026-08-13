@@ -15,6 +15,7 @@ User
   -> LangChain agent
      -> Groq or OpenAI
      -> optional Tavily search
+  -> normalized search provenance
   -> response
 ```
 
@@ -108,10 +109,10 @@ GPT-OSS 20B is the default because it is the lower-cost Groq option in this cura
   "messages": [
     {
       "role": "user",
-      "content": "Explain dependency injection."
+      "content": "What is the latest Python release?"
     }
   ],
-  "allow_search": false
+  "allow_search": true
 }
 ```
 
@@ -120,7 +121,7 @@ A successful request returns HTTP `200` with a typed response:
 ```json
 {
   "model_key": "groq-gpt-oss-20b",
-  "reply": "Dependency injection means...",
+  "reply": "The latest Python release is...",
   "context": {
     "estimation_method": "langchain_approximate_v1",
     "context_window_tokens": 131072,
@@ -133,6 +134,23 @@ A successful request returns HTTP `200` with a typed response:
     "included_message_count": 1,
     "omitted_message_count": 0,
     "was_truncated": false
+  },
+  "search": {
+    "allowed": true,
+    "attempted": true,
+    "executions": [
+      {
+        "query": "latest Python release",
+        "status": "succeeded",
+        "sources": [
+          {
+            "title": "Python downloads",
+            "url": "https://www.python.org/downloads/",
+            "snippet": "Download the latest Python release..."
+          }
+        ]
+      }
+    ]
   }
 }
 ```
@@ -163,6 +181,8 @@ Streamlit keeps one temporary conversation in each browser session and resends t
 - At 50 messages, the UI stops accepting new turns; this remains a structural API limit.
 - The UI keeps the full committed transcript even if the backend sends a smaller recent window to the model.
 - After each successful turn, the UI displays the estimated model-input usage and warns when older messages were omitted.
+- Search evidence remains attached to the assistant turn that produced it.
+- When search is allowed, the UI distinguishes unused search, successful retrieval, and failed retrieval.
 
 This history is intentionally session-scoped. It is not stored in a database, shared between browser sessions, or guaranteed to survive a Streamlit restart.
 
@@ -179,6 +199,14 @@ The output reserve is 4,096 tokens for the current catalog. The safety margin is
 If the full system prompt and history fit, the backend sends all messages. Otherwise it always retains the newest user message, then prepends the newest complete user/assistant turns while they fit. It never sends half of a completed turn and never skips a recent oversized turn to recover less-relevant older turns. If the system prompt plus newest user message cannot fit, the API returns HTTP `413` with code `context_window_exceeded` before calling a model provider.
 
 The policy does not yet summarize removed history or identify important facts. Search-tool schemas and provider-specific serialization may also consume context; the safety margin reduces that operational risk but does not make the approximation exact.
+
+## Web-search provenance
+
+Enabling web search grants permission; it does not guarantee that the agent will use it. Every successful response therefore reports whether search was allowed, whether it was attempted, which bounded queries ran, whether each execution succeeded, and which normalized sources were retrieved.
+
+One request may perform at most three basic Tavily searches with at most two sources per execution. The application exposes only a validated title, HTTP(S) URL, and bounded snippet. Raw page content, relevance scores, provider exceptions, tool-call identifiers, and other provider metadata stay behind the backend trust boundary.
+
+The UI renders retrieved sources separately from the assistant's Markdown. Source titles and snippets are untrusted web data. A retrieved source is provenance, not a claim-level citation: this checkpoint proves what the search tool returned, but does not yet prove that every sentence in the answer is supported by a source.
 
 ## Tests
 
@@ -198,14 +226,15 @@ The tests use fake providers and do not make Groq, OpenAI, or Tavily requests.
 - Optionally allow the agent to search the web using Tavily.
 - Retry failed turns without adding incomplete exchanges to model history.
 - Bound model input with deterministic recent-window selection and visible usage metadata.
+- Inspect whether web search ran and which sources it retrieved for each answer.
 
 ## Current limitations
 
-This repository is intentionally still a learning prototype. Conversation history is temporary and browser-session-owned; the project does not yet provide persistent memory, context summarization, exact provider token accounting, streaming, source display, provider-specific failure normalization, production-grade observability, or an explicit custom LangGraph workflow.
+This repository is intentionally still a learning prototype. Conversation history is temporary and browser-session-owned; the project does not yet provide persistent memory, context summarization, claim-level citation validation, exact provider token accounting, streaming, provider-specific failure normalization, production-grade observability, or an explicit custom LangGraph workflow.
 
 ## Learning roadmap
 
-The next checkpoints will expose search evidence and eventually build an explicit LangGraph workflow with evaluation and observability.
+The next checkpoints will add streaming or claim-level grounding, then eventually build an explicit LangGraph workflow with evaluation and observability.
 
 ## Learning journal
 

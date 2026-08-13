@@ -1,8 +1,16 @@
 import pytest
 from pydantic import ValidationError
 
-from api_contract import ChatMessage, ChatResponse, ContextUsage
+from api_contract import (
+    ChatMessage,
+    ChatResponse,
+    ContextUsage,
+    SearchEvidence,
+    SearchExecution,
+    SearchSource,
+)
 from frontend_session import (
+    CommittedTurn,
     ConversationSettings,
     ConversationState,
     ConversationStateError,
@@ -45,6 +53,31 @@ def response(reply="Answer", model_key="groq-gpt-oss-20b", **usage_overrides):
         model_key=model_key,
         reply=reply,
         context=ContextUsage(**usage),
+        search=SearchEvidence(allowed=False, attempted=False),
+    )
+
+
+def searched_response(reply="Searched answer"):
+    base = response(reply)
+    return base.model_copy(
+        update={
+            "search": SearchEvidence(
+                allowed=True,
+                attempted=True,
+                executions=(
+                    SearchExecution(
+                        query="current information",
+                        status="succeeded",
+                        sources=(
+                            SearchSource(
+                                title="Official source",
+                                url="https://example.com/source",
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }
     )
 
 
@@ -169,10 +202,19 @@ def test_new_message_is_blocked_while_failure_is_pending():
 
 
 def test_last_exchange_is_allowed_at_48_messages_then_limit_is_reached():
-    history = []
+    turns = []
     for number in range(24):
-        history.extend(committed_exchange(number))
-    state = ConversationState(messages=history, settings=settings())
+        user_message, assistant_message = committed_exchange(number)
+        turn_response = response(original_message_count=1, included_message_count=1)
+        turns.append(
+            CommittedTurn(
+                user_message=user_message,
+                assistant_message=assistant_message,
+                context=turn_response.context,
+                search=turn_response.search,
+            )
+        )
+    state = ConversationState(turns=turns, settings=settings())
 
     assert len(state.messages) == 48
     assert state.can_start_turn is True
@@ -226,3 +268,39 @@ def test_two_sessions_do_not_share_message_lists():
 
     assert second.messages == []
     assert second.settings is None
+
+
+def test_search_evidence_remains_attached_to_its_committed_turn():
+    state = ConversationState()
+    search_settings = settings(allow_search=True)
+    first_attempt = state.begin_turn("Current question", search_settings)
+    state.commit_turn(first_attempt, searched_response())
+    second_attempt = state.begin_turn("Follow-up", search_settings)
+    unused_response = response("Second answer").model_copy(
+        update={"search": SearchEvidence(allowed=True, attempted=False)}
+    )
+    state.commit_turn(second_attempt, unused_response)
+
+    assert state.turns[0].search.executions[0].query == "current information"
+    assert state.turns[1].search.attempted is False
+    assert [message.content for message in state.messages] == [
+        "Current question",
+        "Searched answer",
+        "Follow-up",
+        "Second answer",
+    ]
+
+
+def test_mismatched_search_permission_cannot_corrupt_history():
+    state = ConversationState()
+    attempt = state.begin_turn("Question", settings())
+
+    with pytest.raises(ConversationStateError, match="search evidence"):
+        state.commit_turn(
+            attempt,
+            response().model_copy(
+                update={"search": SearchEvidence(allowed=True, attempted=False)}
+            ),
+        )
+
+    assert state.turns == []
