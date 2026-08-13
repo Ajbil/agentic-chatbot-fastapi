@@ -16,7 +16,7 @@ The journal is not a raw development transcript. Each checkpoint is a curated en
 | [05](checkpoints/05-session-chat-history/README.md) | Session-owned chat history | Complete | [PR #5](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/5), [merge commit `5567d2f`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/5567d2f) |
 | [06](checkpoints/06-context-window-management/README.md) | Context budgeting and transparent recent-window trimming | Complete | [PR #6](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/6), [merge commit `43f8807`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/43f8807) |
 | [07](checkpoints/07-auditable-search-evidence/README.md) | Auditable web search and source provenance | Complete | [PR #7](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/7), [merge commit `e64f2f5`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/e64f2f5) |
-| [08](checkpoints/08-typed-chat-streaming/README.md) | Typed streaming and operational progress | In progress | Pull request pending |
+| [08](checkpoints/08-typed-chat-streaming/README.md) | Typed streaming and operational progress | In review | [Draft PR #8](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/8) |
 
 ## Reference material
 

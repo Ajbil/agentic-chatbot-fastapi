@@ -2,10 +2,10 @@
 
 | Field | Value |
 |---|---|
-| Status | In progress |
+| Status | In review |
 | Date | 2026-08-13 |
 | Branch | `codex/typed-chat-streaming` |
-| Pull request | Pending |
+| Pull request | [#8 - Add typed chat streaming and progress events](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/8) |
 | Implementation commit | [`ef1f826`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/ef1f826) |
 
 ## Objective
