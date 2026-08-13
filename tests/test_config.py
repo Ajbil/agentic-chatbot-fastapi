@@ -12,6 +12,7 @@ def empty_environment(monkeypatch):
     for variable_name in API_KEY_VARIABLES + (
         "BACKEND_BASE_URL",
         "BACKEND_REQUEST_TIMEOUT_SECONDS",
+        "BACKEND_STREAM_READ_TIMEOUT_SECONDS",
     ):
         monkeypatch.delenv(variable_name, raising=False)
 
@@ -24,14 +25,17 @@ def test_settings_have_safe_defaults_without_credentials(empty_environment):
     assert settings.tavily_api_key is None
     assert str(settings.backend_base_url) == "http://127.0.0.1:3003/"
     assert settings.backend_chat_url == "http://127.0.0.1:3003/chat"
+    assert settings.backend_chat_stream_url == "http://127.0.0.1:3003/chat/stream"
     assert settings.backend_models_url == "http://127.0.0.1:3003/models"
     assert settings.backend_request_timeout_seconds == 30.0
+    assert settings.backend_stream_read_timeout_seconds == 120.0
 
 
 def test_environment_overrides_defaults(monkeypatch, empty_environment):
     monkeypatch.setenv("GROQ_API_KEY", "test-groq-secret")
     monkeypatch.setenv("BACKEND_BASE_URL", "http://localhost:9000/api/")
     monkeypatch.setenv("BACKEND_REQUEST_TIMEOUT_SECONDS", "45")
+    monkeypatch.setenv("BACKEND_STREAM_READ_TIMEOUT_SECONDS", "180")
 
     settings = Settings(_env_file=None)
 
@@ -39,8 +43,10 @@ def test_environment_overrides_defaults(monkeypatch, empty_environment):
     assert settings.groq_api_key.get_secret_value() == "test-groq-secret"
     assert str(settings.backend_base_url) == "http://localhost:9000/api/"
     assert settings.backend_chat_url == "http://localhost:9000/api/chat"
+    assert settings.backend_chat_stream_url == "http://localhost:9000/api/chat/stream"
     assert settings.backend_models_url == "http://localhost:9000/api/models"
     assert settings.backend_request_timeout_seconds == 45.0
+    assert settings.backend_stream_read_timeout_seconds == 180.0
 
 
 def test_secret_values_are_masked():
@@ -54,6 +60,12 @@ def test_secret_values_are_masked():
 def test_invalid_timeout_is_rejected(timeout):
     with pytest.raises(ValidationError):
         Settings(_env_file=None, backend_request_timeout_seconds=timeout)
+
+
+@pytest.mark.parametrize("timeout", [0, -1, 601])
+def test_invalid_stream_read_timeout_is_rejected(timeout):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, backend_stream_read_timeout_seconds=timeout)
 
 
 def test_invalid_backend_base_url_is_rejected():

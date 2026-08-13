@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
 
 DEFAULT_SYSTEM_PROMPT = "Act as a helpful AI Assistant"
@@ -209,3 +209,53 @@ class ErrorResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     error: ErrorDetail
+
+
+class _StreamEvent(BaseModel):
+    """Fields shared by every version-one chat stream event."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    version: Literal[1] = 1
+    sequence: int = Field(gt=0)
+
+
+class StreamStartedEvent(_StreamEvent):
+    type: Literal["started"] = "started"
+    model_key: str = Field(min_length=1)
+
+
+class StreamStatusEvent(_StreamEvent):
+    type: Literal["status"] = "status"
+    stage: Literal[
+        "model_running",
+        "search_running",
+        "search_results_received",
+        "finalizing",
+    ]
+
+
+class StreamDeltaEvent(_StreamEvent):
+    type: Literal["delta"] = "delta"
+    text: str = Field(min_length=1)
+
+
+class StreamCompleteEvent(_StreamEvent):
+    type: Literal["complete"] = "complete"
+    response: ChatResponse
+
+
+class StreamErrorEvent(_StreamEvent):
+    type: Literal["error"] = "error"
+    error: ErrorDetail
+
+
+ChatStreamEvent = Annotated[
+    StreamStartedEvent
+    | StreamStatusEvent
+    | StreamDeltaEvent
+    | StreamCompleteEvent
+    | StreamErrorEvent,
+    Field(discriminator="type"),
+]
+CHAT_STREAM_EVENT_ADAPTER = TypeAdapter(ChatStreamEvent)

@@ -2,19 +2,26 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from ai_agent import (
     AgentToolLimitExceededError,
     InvalidAgentResponseError,
     MissingConfigurationError,
     get_response_from_ai_agent,
+    prepare_agent_run,
+    stream_prepared_agent,
 )
 from api_contract import (
     ChatRequest,
     ChatResponse,
     ErrorDetail,
     ErrorResponse,
+    StreamCompleteEvent,
+    StreamDeltaEvent,
+    StreamErrorEvent,
+    StreamStartedEvent,
+    StreamStatusEvent,
     ValidationIssue,
 )
 from context_budget import ContextWindowExceededError, plan_context
@@ -173,6 +180,121 @@ def chat_endpoint(request: ChatRequest) -> ChatResponse:
         context=context_plan.usage,
         search=agent_outcome.search,
     )
+
+
+def _serialize_stream_event(event) -> bytes:
+    return (event.model_dump_json() + "\n").encode("utf-8")
+
+
+def _runtime_error_detail(exc: Exception) -> ErrorDetail:
+    if isinstance(exc, AgentToolLimitExceededError):
+        return ErrorDetail(code="agent_tool_limit_exceeded", message=str(exc))
+    if isinstance(exc, InvalidAgentResponseError):
+        return ErrorDetail(code="invalid_upstream_response", message=str(exc))
+    logger.error(
+        "Unhandled error while streaming a chat response",
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    return ErrorDetail(
+        code="upstream_stream_failed",
+        message="The assistant stream failed before it completed.",
+    )
+
+
+@app.post(
+    "/chat/stream",
+    responses={
+        200: {
+            "description": "Versioned NDJSON chat event stream",
+            "content": {"application/x-ndjson": {"schema": {"type": "string"}}},
+        },
+        400: {"model": ErrorResponse},
+        413: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
+    """Stream safe progress and answer events for one canonical chat request."""
+
+    try:
+        model = get_model_by_key(request.model_key)
+    except UnsupportedModelError as exc:
+        raise ApiContractError(400, "unsupported_model", str(exc)) from exc
+    if request.allow_search and not model.supports_tool_calling:
+        raise ApiContractError(
+            400,
+            "unsupported_capability",
+            f"Model '{model.key}' does not support search tools.",
+        )
+    try:
+        context_plan = plan_context(model, request.system_prompt, request.messages)
+    except ContextWindowExceededError as exc:
+        raise ApiContractError(413, "context_window_exceeded", str(exc)) from exc
+    try:
+        prepared = prepare_agent_run(
+            model,
+            list(context_plan.messages),
+            request.allow_search,
+            request.system_prompt,
+        )
+    except MissingConfigurationError as exc:
+        raise ApiContractError(
+            503, "service_configuration_error", str(exc)
+        ) from exc
+
+    def event_bytes():
+        sequence = 1
+        assembled_reply = ""
+        yield _serialize_stream_event(
+            StreamStartedEvent(sequence=sequence, model_key=model.key)
+        )
+        try:
+            for agent_event in stream_prepared_agent(prepared):
+                if agent_event.type == "status":
+                    sequence += 1
+                    yield _serialize_stream_event(
+                        StreamStatusEvent(sequence=sequence, stage=agent_event.value)
+                    )
+                elif agent_event.type == "delta":
+                    sequence += 1
+                    assembled_reply += agent_event.value
+                    yield _serialize_stream_event(
+                        StreamDeltaEvent(sequence=sequence, text=agent_event.value)
+                    )
+                else:
+                    outcome = agent_event.value
+                    if not assembled_reply:
+                        sequence += 1
+                        assembled_reply = outcome.reply
+                        yield _serialize_stream_event(
+                            StreamDeltaEvent(sequence=sequence, text=outcome.reply)
+                        )
+                    elif assembled_reply != outcome.reply:
+                        raise InvalidAgentResponseError(
+                            "The streamed assistant text did not match the final response."
+                        )
+                    response = ChatResponse(
+                        model_key=model.key,
+                        reply=outcome.reply,
+                        context=context_plan.usage,
+                        search=outcome.search,
+                    )
+                    sequence += 1
+                    yield _serialize_stream_event(
+                        StreamCompleteEvent(sequence=sequence, response=response)
+                    )
+                    return
+            raise InvalidAgentResponseError(
+                "The agent stream ended without a completed response."
+            )
+        except Exception as exc:
+            sequence += 1
+            yield _serialize_stream_event(
+                StreamErrorEvent(sequence=sequence, error=_runtime_error_detail(exc))
+            )
+
+    return StreamingResponse(event_bytes(), media_type="application/x-ndjson")
 
 
 if __name__ == "__main__":

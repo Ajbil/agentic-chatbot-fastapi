@@ -47,6 +47,19 @@ class FakeResponse:
     def json(self):
         return self.payload
 
+    def iter_lines(self, decode_unicode=False):
+        events = [
+            {"version": 1, "type": "started", "sequence": 1, "model_key": self.payload["model_key"]},
+            {"version": 1, "type": "status", "sequence": 2, "stage": "model_running"},
+            {"version": 1, "type": "delta", "sequence": 3, "text": self.payload["reply"]},
+            {"version": 1, "type": "complete", "sequence": 4, "response": self.payload},
+        ]
+        import json
+        return iter(json.dumps(event) for event in events)
+
+    def close(self):
+        pass
+
 
 def chat_success(request, reply, *, truncated=False, search=None):
     message_count = len(request["messages"])
@@ -86,7 +99,7 @@ def test_streamlit_chat_commits_history_and_locks_settings(monkeypatch):
         lambda url, timeout: FakeResponse(200, VALID_CATALOG),
     )
 
-    def fake_post(url, json, timeout):
+    def fake_post(url, json, timeout, stream):
         captured_requests.append(json)
         return FakeResponse(
             200,
@@ -130,7 +143,7 @@ def test_streamlit_preserves_full_transcript_and_discloses_backend_trimming(
         lambda url, timeout: FakeResponse(200, VALID_CATALOG),
     )
 
-    def fake_post(url, json, timeout):
+    def fake_post(url, json, timeout, stream):
         captured_requests.append(json)
         return FakeResponse(
             200,
@@ -167,7 +180,7 @@ def test_streamlit_keeps_web_sources_with_their_answer(monkeypatch):
         lambda url, timeout: FakeResponse(200, VALID_CATALOG),
     )
 
-    def fake_post(url, json, timeout):
+    def fake_post(url, json, timeout, stream):
         captured_requests.append(json)
         if len(captured_requests) == 1:
             search = {
@@ -222,7 +235,7 @@ def test_streamlit_discloses_total_search_failure(monkeypatch):
     monkeypatch.setattr(
         frontend_chat.requests,
         "post",
-        lambda url, json, timeout: FakeResponse(
+        lambda url, json, timeout, stream: FakeResponse(
             200,
             chat_success(
                 json,
@@ -261,7 +274,7 @@ def test_provider_change_selects_a_valid_model_before_locking(monkeypatch):
         lambda url, timeout: FakeResponse(200, VALID_CATALOG),
     )
 
-    def fake_post(url, json, timeout):
+    def fake_post(url, json, timeout, stream):
         captured_requests.append(json)
         return FakeResponse(
             200,
@@ -290,7 +303,7 @@ def test_streamlit_failure_is_retryable_and_not_committed(monkeypatch):
         lambda url, timeout: FakeResponse(200, VALID_CATALOG),
     )
 
-    def fake_post(url, json, timeout):
+    def fake_post(url, json, timeout, stream):
         nonlocal attempts
         attempts += 1
         if attempts == 1:
@@ -339,7 +352,7 @@ def test_new_chat_clears_history_and_unlocks_settings(monkeypatch):
     monkeypatch.setattr(
         frontend_chat.requests,
         "post",
-        lambda url, json, timeout: FakeResponse(
+        lambda url, json, timeout, stream: FakeResponse(
             200,
             chat_success(json, "Answer"),
         ),
@@ -371,7 +384,7 @@ def test_history_remains_visible_when_catalog_later_fails(monkeypatch):
     monkeypatch.setattr(
         frontend_chat.requests,
         "post",
-        lambda url, json, timeout: FakeResponse(
+        lambda url, json, timeout, stream: FakeResponse(
             200,
             chat_success(json, "Saved answer"),
         ),

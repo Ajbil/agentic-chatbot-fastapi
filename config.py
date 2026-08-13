@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     tavily_api_key: SecretStr | None = None
     backend_base_url: HttpUrl = HttpUrl("http://127.0.0.1:3003")
     backend_request_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    backend_stream_read_timeout_seconds: float = Field(default=120.0, gt=0, le=600)
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",
@@ -26,6 +27,10 @@ class Settings(BaseSettings):
     @property
     def backend_chat_url(self) -> str:
         return self._backend_endpoint_url("chat")
+
+    @property
+    def backend_chat_stream_url(self) -> str:
+        return self._backend_endpoint_url("chat/stream")
 
     @property
     def backend_models_url(self) -> str:
