@@ -14,7 +14,8 @@ A typed and tested AI-agent application built with a Streamlit frontend, FastAPI
 - Deterministic recent-window context selection exposes what was omitted and why.
 - Bounded search normalizes untrusted provider output into application-owned provenance.
 - Versioned NDJSON events enforce ordering, one terminal outcome, and atomic history commits.
-- Offline tests use fake providers; local and CI gates require lint, formatting, static types, branch coverage, compilation, and CodeQL analysis.
+- Versioned AI evaluations distinguish deterministic contract gates from advisory answer-quality signals.
+- Offline tests use fake providers; local and CI gates require lint, formatting, static types, branch coverage, deterministic evaluation replay, compilation, and CodeQL analysis.
 - The [engineering learning journal](docs/learning/README.md) preserves decisions, alternatives, evidence, and transferable lessons for every checkpoint.
 
 ## Architecture
@@ -255,10 +256,31 @@ python -m pipenv verify
 python -m pipenv run ruff check .
 python -m pipenv run ruff format --check .
 python -m pipenv run mypy
+python -m pipenv run python -m evaluations validate
+python -m pipenv run python -m evaluations replay --check-baseline
 python -m pipenv run python -m pytest --cov=. --cov-report=term-missing --cov-fail-under=80
 ```
 
-The 135 tests use fake providers and do not make Groq, OpenAI, or Tavily requests. Coverage uses branch measurement, and CI rejects a total below 80%. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow and formatting command.
+The 166 tests use fake providers and do not make Groq, OpenAI, or Tavily requests. Coverage uses branch measurement, and CI rejects a total below 80%. The separate `evaluation` job validates and replays the committed AI-behavior baseline without credentials. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow and formatting command.
+
+## AI evaluation baseline
+
+The versioned [v1 dataset](evaluations/datasets/v1.json) contains 15 cases covering static knowledge, required and optional search, uncertainty, instruction resilience, multi-turn context, and conflicting evidence. Each case defines deterministic hard invariants and optional lexical signals. Hard checks govern execution, model identity, search permission and usage, provenance counts, and forbidden markers. Advisory checks report concepts and response length; they are useful regression clues but do not prove correctness.
+
+Replay mode scores committed typed `ChatResponse` records and compares the resulting JSON report with the reviewed baseline:
+
+```powershell
+python -m pipenv run python -m evaluations validate
+python -m pipenv run python -m evaluations replay --check-baseline
+```
+
+Live mode sends selected cases through the real FastAPI `GET /models` and `POST /chat` boundary. Start the backend first, then explicitly acknowledge provider usage:
+
+```powershell
+python -m pipenv run python -m evaluations live --model-key groq-gpt-oss-20b --confirm-live
+```
+
+Live runs are sequential, make no automatic retries, continue after individual failures, and write typed reports under ignored `evaluation-results/`. They are deliberately excluded from CI because model output and external search change over time and may consume paid credits. No LLM judge is used: deterministic rubrics stay explainable, while human review remains necessary for factuality, usefulness, tone, and claim-level grounding.
 
 ## Current capabilities
 
@@ -270,14 +292,15 @@ The 135 tests use fake providers and do not make Groq, OpenAI, or Tavily request
 - Bound model input with deterministic recent-window selection and visible usage metadata.
 - Inspect whether web search ran and which sources it retrieved for each answer.
 - Watch typed model and search progress while the final answer streams.
+- Replay a versioned, deterministic AI-behavior baseline and run opt-in live evaluations through the public API.
 
 ## Current limitations
 
-This is a portfolio-ready engineering project, not a deployed production service. Conversation history remains temporary and browser-session-owned; the project does not yet provide authentication, authorization, persistent storage, deployment infrastructure, rate limiting, production telemetry, service-level objectives, resumable streams, strong cross-provider cancellation, claim-level citation validation, exact provider token accounting, or an explicit custom LangGraph workflow.
+This is a portfolio-ready engineering project, not a deployed production service. The evaluation baseline detects contract and search-policy regressions but does not prove factual correctness or real-world model quality. Conversation history remains temporary and browser-session-owned; the project does not yet provide authentication, authorization, persistent storage, deployment infrastructure, rate limiting, production telemetry, service-level objectives, resumable streams, strong cross-provider cancellation, claim-level citation validation, exact provider token accounting, or an explicit custom LangGraph workflow.
 
 ## Learning roadmap
 
-Checkpoint 10 will establish an offline AI-quality evaluation baseline. Later checkpoints can add claim-level grounding, an explicit LangGraph workflow, observability, persistence and identity, deployment hardening, and load/resilience testing. These are deliberately separated so this repository does not claim production readiness before it has production evidence.
+Checkpoint 10 establishes the deterministic AI-evaluation baseline. Later checkpoints can add claim-level grounding, an explicit LangGraph workflow, observability, persistence and identity, deployment hardening, and load/resilience testing. These are deliberately separated so this repository does not claim production readiness before it has production evidence.
 
 ## Learning journal
 
