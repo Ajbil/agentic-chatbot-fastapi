@@ -6,10 +6,13 @@ from api_contract import (
     MAX_MESSAGE_CHARACTERS,
     MAX_SYSTEM_PROMPT_CHARACTERS,
     SearchEvidence,
+    StreamCompleteEvent,
+    StreamDeltaEvent,
+    StreamStatusEvent,
 )
 from config import get_settings
 from frontend_catalog import ModelCatalogError, fetch_model_catalog, models_for_provider
-from frontend_chat import ChatClientError, send_chat
+from frontend_chat import ChatClientError, stream_chat
 from frontend_session import (
     ConversationSettings,
     ConversationState,
@@ -106,19 +109,52 @@ def _render_context_usage(state: ConversationState) -> None:
 def _send_attempt(
     state: ConversationState,
     attempt: TurnAttempt,
-    backend_chat_url: str,
-    timeout: float,
+    backend_chat_stream_url: str,
+    connect_timeout: float,
+    read_timeout: float,
 ) -> None:
-    with st.spinner("Waiting for the assistant..."):
+    stage_labels = {
+        "model_running": "Contacting the model...",
+        "search_running": "Searching the web...",
+        "search_results_received": "Processing retrieved sources...",
+        "finalizing": "Finalizing the answer...",
+    }
+    completed_response = None
+    with st.chat_message("assistant"):
+        status_placeholder = st.empty()
+
+        def answer_fragments():
+            nonlocal completed_response
+            for event in stream_chat(
+                backend_chat_stream_url,
+                connect_timeout,
+                read_timeout,
+                attempt.request,
+            ):
+                if isinstance(event, StreamStatusEvent):
+                    status_placeholder.caption(stage_labels[event.stage])
+                elif isinstance(event, StreamDeltaEvent):
+                    yield event.text
+                elif isinstance(event, StreamCompleteEvent):
+                    completed_response = event.response
+
         try:
-            response = send_chat(backend_chat_url, timeout, attempt.request)
-            state.commit_turn(attempt, response)
+            st.write_stream(answer_fragments())
+            status_placeholder.empty()
+            if completed_response is None:
+                raise ChatClientError(
+                    "The backend stream ended without a completed response.",
+                    code="invalid_stream_response",
+                )
+            state.commit_turn(attempt, completed_response)
         except ChatClientError as exc:
+            status_placeholder.empty()
             state.record_failure(
                 attempt,
                 code=exc.code,
                 message=str(exc),
                 status_code=exc.status_code,
+                partial_reply=exc.partial_reply,
             )
         except (ValidationError, ConversationStateError):
             state.record_failure(
@@ -132,8 +168,9 @@ def _send_attempt(
 
 def _render_failed_turn(
     state: ConversationState,
-    backend_chat_url: str,
-    timeout: float,
+    backend_chat_stream_url: str,
+    connect_timeout: float,
+    read_timeout: float,
     retry_disabled: bool,
 ) -> None:
     failed_turn = state.failed_turn
@@ -143,6 +180,11 @@ def _render_failed_turn(
     with st.chat_message("user"):
         st.markdown(failed_turn.user_message.content)
         st.caption("Not added to conversation history because the request failed.")
+
+    if failed_turn.partial_reply:
+        with st.chat_message("assistant"):
+            st.markdown(failed_turn.partial_reply)
+            st.warning("Incomplete response — not added to conversation history.")
 
     st.error(failed_turn.message)
     status_suffix = (
@@ -161,8 +203,9 @@ def _render_failed_turn(
         _send_attempt(
             state,
             state.retry_turn(),
-            backend_chat_url,
-            timeout,
+            backend_chat_stream_url,
+            connect_timeout,
+            read_timeout,
         )
 
 
@@ -318,8 +361,9 @@ def main():
     _render_context_usage(state)
     _render_failed_turn(
         state,
-        settings.backend_chat_url,
+        settings.backend_chat_stream_url,
         settings.backend_request_timeout_seconds,
+        settings.backend_stream_read_timeout_seconds,
         retry_disabled=not catalog_available,
     )
 
@@ -360,8 +404,9 @@ def main():
             _send_attempt(
                 state,
                 attempt,
-                settings.backend_chat_url,
+                settings.backend_chat_stream_url,
                 settings.backend_request_timeout_seconds,
+                settings.backend_stream_read_timeout_seconds,
             )
 
 

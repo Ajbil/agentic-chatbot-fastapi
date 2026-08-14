@@ -158,6 +158,22 @@ def test_failed_turn_is_retryable_but_not_committed():
     assert state.failed_turn.code == "chat_request_failed"
 
 
+def test_partial_stream_output_is_visible_but_never_committed():
+    state = ConversationState()
+    attempt = state.begin_turn("Streaming question", settings())
+
+    state.record_failure(
+        attempt,
+        code="upstream_stream_failed",
+        message="The stream failed.",
+        partial_reply="Incomplete answer",
+    )
+
+    assert state.failed_turn.partial_reply == "Incomplete answer"
+    assert state.messages == []
+    assert state.retry_turn().request.messages[-1].content == "Streaming question"
+
+
 def test_repeated_failure_replaces_error_without_duplicating_message():
     state = ConversationState()
     attempt = state.begin_turn("Please retry me", settings())

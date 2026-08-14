@@ -10,7 +10,7 @@ A learning-focused AI agent application built with a Streamlit frontend, a FastA
 User
   -> Streamlit UI
   -> FastAPI /models catalog
-  -> FastAPI /chat endpoint
+  -> FastAPI /chat/stream NDJSON endpoint
   -> deterministic context-budget planner
   -> LangChain agent
      -> Groq or OpenAI
@@ -81,6 +81,7 @@ Configuration is loaded from environment variables and the local `.env` file.
 | `TAVILY_API_KEY` | Web search is enabled | None |
 | `BACKEND_BASE_URL` | Optional frontend override | `http://127.0.0.1:3003` |
 | `BACKEND_REQUEST_TIMEOUT_SECONDS` | Optional frontend override | `30` |
+| `BACKEND_STREAM_READ_TIMEOUT_SECONDS` | Optional streaming idle-read timeout | `120` |
 
 Settings are validated centrally. Missing credentials fail only when a request uses the corresponding provider or tool.
 
@@ -169,6 +170,22 @@ Handled failures return a non-`200` status and a consistent error envelope:
 
 FastAPI's interactive documentation at `http://127.0.0.1:3003/docs` contains the complete request, response, validation, and status-code schemas.
 
+## Streaming chat contract
+
+The Streamlit client sends the same canonical request to `POST /chat/stream`. The backend responds as `application/x-ndjson`: every newline-delimited object is one independently validated version-one event.
+
+```json
+{"version":1,"type":"started","sequence":1,"model_key":"groq-gpt-oss-20b"}
+{"version":1,"type":"status","sequence":2,"stage":"model_running"}
+{"version":1,"type":"delta","sequence":3,"text":"The latest "}
+{"version":1,"type":"delta","sequence":4,"text":"release is..."}
+{"version":1,"type":"complete","sequence":5,"response":{"model_key":"groq-gpt-oss-20b","reply":"The latest release is...","context":{},"search":{}}}
+```
+
+The shortened terminal example omits nested fields for readability; real `complete` events contain the full `ChatResponse`. A stream always starts with `started`, uses contiguous sequence numbers, and ends with exactly one `complete` or `error`. Operational stages describe work such as model execution and web search; they never expose private model reasoning.
+
+Errors detected before streaming begins retain their normal HTTP status and `ErrorResponse`. Once HTTP `200` headers have been sent, a later failure is represented by a terminal `error` event because the server can no longer change the HTTP status.
+
 ## Conversation behavior
 
 Streamlit keeps one temporary conversation in each browser session and resends the complete committed history with every request.
@@ -183,6 +200,8 @@ Streamlit keeps one temporary conversation in each browser session and resends t
 - After each successful turn, the UI displays the estimated model-input usage and warns when older messages were omitted.
 - Search evidence remains attached to the assistant turn that produced it.
 - When search is allowed, the UI distinguishes unused search, successful retrieval, and failed retrieval.
+- Assistant text and safe operational stages appear progressively while the request runs.
+- Partial output from a failed stream is labeled incomplete and is never committed to model history.
 
 This history is intentionally session-scoped. It is not stored in a database, shared between browser sessions, or guaranteed to survive a Streamlit restart.
 
@@ -227,14 +246,15 @@ The tests use fake providers and do not make Groq, OpenAI, or Tavily requests.
 - Retry failed turns without adding incomplete exchanges to model history.
 - Bound model input with deterministic recent-window selection and visible usage metadata.
 - Inspect whether web search ran and which sources it retrieved for each answer.
+- Watch typed model and search progress while the final answer streams.
 
 ## Current limitations
 
-This repository is intentionally still a learning prototype. Conversation history is temporary and browser-session-owned; the project does not yet provide persistent memory, context summarization, claim-level citation validation, exact provider token accounting, streaming, provider-specific failure normalization, production-grade observability, or an explicit custom LangGraph workflow.
+This repository is intentionally still a learning prototype. Conversation history is temporary and browser-session-owned; the project does not yet provide persistent memory, context summarization, claim-level citation validation, exact provider token accounting, resumable streams, strong cross-provider cancellation, provider-specific failure normalization, production-grade observability, or an explicit custom LangGraph workflow.
 
 ## Learning roadmap
 
-The next checkpoints will add streaming or claim-level grounding, then eventually build an explicit LangGraph workflow with evaluation and observability.
+The next checkpoints can add claim-level grounding, then eventually build an explicit LangGraph workflow with evaluation and observability.
 
 ## Learning journal
 

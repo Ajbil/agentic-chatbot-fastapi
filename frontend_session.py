@@ -40,6 +40,7 @@ class FailedTurn:
     code: str
     message: str
     status_code: int | None = None
+    partial_reply: str = ""
 
 
 @dataclass(frozen=True)
@@ -146,12 +147,14 @@ class ConversationState:
         code: str,
         message: str,
         status_code: int | None = None,
+        partial_reply: str = "",
     ) -> None:
         self.failed_turn = FailedTurn(
             user_message=attempt.user_message,
             code=code,
             message=message,
             status_code=status_code,
+            partial_reply=partial_reply,
         )
 
     def reset(self) -> None:

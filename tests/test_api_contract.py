@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from api_contract import (
+    CHAT_STREAM_EVENT_ADAPTER,
     MAX_MESSAGE_CHARACTERS,
     MAX_MESSAGES,
     MAX_SYSTEM_PROMPT_CHARACTERS,
@@ -11,6 +12,7 @@ from api_contract import (
     SearchEvidence,
     SearchExecution,
     SearchSource,
+    StreamDeltaEvent,
 )
 
 
@@ -212,3 +214,20 @@ def test_search_evidence_limits_executions():
                 for number in range(4)
             ),
         )
+
+
+def test_stream_contract_is_versioned_strict_and_discriminated():
+    event = CHAT_STREAM_EVENT_ADAPTER.validate_python(
+        {"version": 1, "type": "delta", "sequence": 3, "text": "Hello"}
+    )
+    assert isinstance(event, StreamDeltaEvent)
+
+    for invalid in (
+        {"version": 2, "type": "delta", "sequence": 1, "text": "Hello"},
+        {"version": 1, "type": "unknown", "sequence": 1},
+        {"version": 1, "type": "delta", "sequence": 0, "text": "Hello"},
+        {"version": 1, "type": "delta", "sequence": 1, "text": ""},
+        {"version": 1, "type": "delta", "sequence": 1, "text": "Hi", "raw": "unsafe"},
+    ):
+        with pytest.raises(ValidationError):
+            CHAT_STREAM_EVENT_ADAPTER.validate_python(invalid)

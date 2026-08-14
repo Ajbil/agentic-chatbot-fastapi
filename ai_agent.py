@@ -1,10 +1,11 @@
 import json
 from dataclasses import dataclass
+from typing import Iterator, Literal
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain.agents.middleware.tool_call_limit import ToolCallLimitExceededError
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langchain_groq import ChatGroq
 from langchain_tavily import TavilySearch
 from langchain_tavily._utilities import TavilySearchAPIWrapper
@@ -67,6 +68,23 @@ class AgentOutcome:
     search: SearchEvidence
 
 
+@dataclass(frozen=True)
+class AgentStreamEvent:
+    """One application-owned update from a streaming agent execution."""
+
+    type: Literal["status", "delta", "complete"]
+    value: str | AgentOutcome
+
+
+@dataclass(frozen=True)
+class PreparedAgentRun:
+    """An eagerly validated agent and its canonical input state."""
+
+    agent: object
+    state: dict
+    allow_search: bool
+
+
 def _require_secret(secret: SecretStr | None, variable_name: str) -> str:
     if secret is None or not secret.get_secret_value().strip():
         raise MissingConfigurationError(
@@ -95,6 +113,32 @@ def get_response_from_ai_agent(
     system_prompt: str,
     settings: Settings | None = None,
 ) -> AgentOutcome:
+    prepared = prepare_agent_run(
+        model,
+        messages,
+        allow_search,
+        system_prompt,
+        settings,
+    )
+    try:
+        response = prepared.agent.invoke(prepared.state)
+    except ToolCallLimitExceededError as exc:
+        raise AgentToolLimitExceededError(
+            "The agent exceeded the maximum of three web searches for one request."
+        ) from exc
+
+    return _outcome_from_messages(response.get("messages", []), allow_search)
+
+
+def prepare_agent_run(
+    model: ModelSpec,
+    messages: list[ChatMessage],
+    allow_search: bool,
+    system_prompt: str,
+    settings: Settings | None = None,
+) -> PreparedAgentRun:
+    """Validate credentials and construct an agent before HTTP streaming starts."""
+
     app_settings = settings or get_settings()
 
     if model.provider == Provider.GROQ:
@@ -163,15 +207,82 @@ def get_response_from_ai_agent(
         middleware=middleware,
     )
 
-    state = {"messages": _convert_messages_to_langchain(messages)}
+    return PreparedAgentRun(
+        agent=agent,
+        state={"messages": _convert_messages_to_langchain(messages)},
+        allow_search=allow_search,
+    )
+
+
+def stream_prepared_agent(
+    prepared: PreparedAgentRun,
+) -> Iterator[AgentStreamEvent]:
+    """Translate LangGraph v2 events into safe application-level updates."""
+
+    yield AgentStreamEvent("status", "model_running")
+    response_messages = []
+    buffered_text: list[str] = []
+    raw_stream = None
+
     try:
-        response = agent.invoke(state)
+        raw_stream = prepared.agent.stream(
+            prepared.state,
+            stream_mode=["messages", "updates"],
+            version="v2",
+        )
+        for part in raw_stream:
+            part_type = part.get("type")
+            data = part.get("data")
+
+            if part_type == "messages" and isinstance(data, tuple):
+                chunk = data[0]
+                if isinstance(chunk, AIMessageChunk) and isinstance(chunk.content, str):
+                    if chunk.content:
+                        buffered_text.append(chunk.content)
+                continue
+
+            if part_type != "updates" or not isinstance(data, dict):
+                continue
+
+            for node_name, update in data.items():
+                if not isinstance(update, dict):
+                    continue
+                messages = update.get("messages", [])
+                if not isinstance(messages, (list, tuple)):
+                    continue
+                response_messages.extend(messages)
+
+                if node_name == "tools":
+                    yield AgentStreamEvent("status", "search_results_received")
+                    yield AgentStreamEvent("status", "model_running")
+                    continue
+
+                ai_messages = [item for item in messages if isinstance(item, AIMessage)]
+                if not ai_messages:
+                    continue
+                latest = ai_messages[-1]
+                if latest.tool_calls:
+                    buffered_text.clear()
+                    yield AgentStreamEvent("status", "search_running")
+                else:
+                    for text in buffered_text:
+                        yield AgentStreamEvent("delta", text)
+                    buffered_text.clear()
     except ToolCallLimitExceededError as exc:
         raise AgentToolLimitExceededError(
             "The agent exceeded the maximum of three web searches for one request."
         ) from exc
+    finally:
+        close_stream = getattr(raw_stream, "close", None)
+        if callable(close_stream):
+            close_stream()
 
-    response_messages = response.get("messages", [])
+    yield AgentStreamEvent("status", "finalizing")
+    outcome = _outcome_from_messages(response_messages, prepared.allow_search)
+    yield AgentStreamEvent("complete", outcome)
+
+
+def _outcome_from_messages(response_messages, allow_search: bool) -> AgentOutcome:
     ai_messages = [msg for msg in response_messages if isinstance(msg, AIMessage)]
 
     if ai_messages:

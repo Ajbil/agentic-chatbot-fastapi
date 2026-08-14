@@ -2,11 +2,12 @@
 
 | Field | Value |
 |---|---|
-| Status | In review |
+| Status | Complete |
 | Date | 2026-08-13 |
 | Branch | `codex/auditable-search-evidence` |
 | Pull request | [#7 - Add auditable web search evidence](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/7) |
 | Implementation commit | [`a4be4ad`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/a4be4ad) |
+| Merge commit | [`e64f2f5`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/e64f2f5) |
 
 ## Objective
 
