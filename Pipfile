@@ -19,6 +19,9 @@ requests = "*"
 [dev-packages]
 pytest = "*"
 httpx2 = "*"
+ruff = "*"
+mypy = "*"
+pytest-cov = "*"
 
 [requires]
 python_version = "3.12"

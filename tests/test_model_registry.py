@@ -12,7 +12,6 @@ from model_registry import (
     resolve_model,
 )
 
-
 EXPECTED_MODEL_KEYS = (
     "groq-gpt-oss-20b",
     "groq-gpt-oss-120b",

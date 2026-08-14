@@ -1,10 +1,13 @@
 import logging
+from collections.abc import Iterator
+from typing import Literal, cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from ai_agent import (
+    AgentOutcome,
     AgentToolLimitExceededError,
     InvalidAgentResponseError,
     MissingConfigurationError,
@@ -15,6 +18,7 @@ from ai_agent import (
 from api_contract import (
     ChatRequest,
     ChatResponse,
+    ChatStreamEvent,
     ErrorDetail,
     ErrorResponse,
     StreamCompleteEvent,
@@ -31,7 +35,6 @@ from model_registry import (
     get_model_by_key,
     get_models_response,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +58,9 @@ def _error_response(
     payload = ErrorResponse(
         error=ErrorDetail(code=code, message=message, details=details)
     )
-    return JSONResponse(status_code=status_code, content=payload.model_dump(mode="json"))
+    return JSONResponse(
+        status_code=status_code, content=payload.model_dump(mode="json")
+    )
 
 
 app = FastAPI(title="Langgraph AI Agent")
@@ -106,7 +111,7 @@ async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResp
 
 
 @app.get("/models", response_model=ModelsResponse)
-def models_endpoint():
+def models_endpoint() -> ModelsResponse:
     """Return the application-owned catalog used by every client."""
 
     return get_models_response()
@@ -182,7 +187,7 @@ def chat_endpoint(request: ChatRequest) -> ChatResponse:
     )
 
 
-def _serialize_stream_event(event) -> bytes:
+def _serialize_stream_event(event: ChatStreamEvent) -> bytes:
     return (event.model_dump_json() + "\n").encode("utf-8")
 
 
@@ -239,11 +244,9 @@ def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
             request.system_prompt,
         )
     except MissingConfigurationError as exc:
-        raise ApiContractError(
-            503, "service_configuration_error", str(exc)
-        ) from exc
+        raise ApiContractError(503, "service_configuration_error", str(exc)) from exc
 
-    def event_bytes():
+    def event_bytes() -> Iterator[bytes]:
         sequence = 1
         assembled_reply = ""
         yield _serialize_stream_event(
@@ -252,17 +255,40 @@ def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
         try:
             for agent_event in stream_prepared_agent(prepared):
                 if agent_event.type == "status":
+                    if not isinstance(agent_event.value, str):
+                        raise InvalidAgentResponseError(
+                            "The agent emitted an invalid status event."
+                        )
                     sequence += 1
                     yield _serialize_stream_event(
-                        StreamStatusEvent(sequence=sequence, stage=agent_event.value)
+                        StreamStatusEvent(
+                            sequence=sequence,
+                            stage=cast(
+                                Literal[
+                                    "model_running",
+                                    "search_running",
+                                    "search_results_received",
+                                    "finalizing",
+                                ],
+                                agent_event.value,
+                            ),
+                        )
                     )
                 elif agent_event.type == "delta":
+                    if not isinstance(agent_event.value, str):
+                        raise InvalidAgentResponseError(
+                            "The agent emitted an invalid delta event."
+                        )
                     sequence += 1
                     assembled_reply += agent_event.value
                     yield _serialize_stream_event(
                         StreamDeltaEvent(sequence=sequence, text=agent_event.value)
                     )
                 else:
+                    if not isinstance(agent_event.value, AgentOutcome):
+                        raise InvalidAgentResponseError(
+                            "The agent emitted an invalid completion event."
+                        )
                     outcome = agent_event.value
                     if not assembled_reply:
                         sequence += 1

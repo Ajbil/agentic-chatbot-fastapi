@@ -2,11 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -17,6 +15,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pipenv
+          cache-dependency-path: Pipfile.lock
+
+      - name: Install Pipenv
+        run: python -m pip install pipenv==2026.6.2
+
+      - name: Verify dependency lock
+        run: python -m pipenv verify
+
+      - name: Install locked dependencies
+        run: python -m pipenv sync --dev
+
+      - name: Lint
+        run: python -m pipenv run ruff check .
+
+      - name: Check formatting
+        run: python -m pipenv run ruff format --check .
+
+      - name: Type-check production modules
+        run: python -m pipenv run mypy
+
   test:
     name: test
     runs-on: ubuntu-latest
@@ -42,8 +74,16 @@ jobs:
       - name: Install locked dependencies
         run: python -m pipenv sync --dev
 
-      - name: Run offline tests
-        run: python -m pipenv run python -m pytest -q
+      - name: Run offline tests with branch coverage
+        run: >-
+          python -m pipenv run python -m pytest
+          --cov=.
+          --cov-report=term-missing
+          --cov-fail-under=80
 
       - name: Compile application modules
-        run: python -m pipenv run python -m py_compile config.py model_registry.py api_contract.py context_budget.py frontend_catalog.py frontend_chat.py frontend_session.py ai_agent.py backend.py frontend.py
+        run: >-
+          python -m pipenv run python -m py_compile
+          config.py model_registry.py api_contract.py context_budget.py
+          frontend_catalog.py frontend_chat.py frontend_session.py
+          ai_agent.py backend.py frontend.py

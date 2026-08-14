@@ -1,14 +1,14 @@
 from dataclasses import dataclass
 from math import ceil
+from typing import Literal
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.messages.utils import count_tokens_approximately
 
 from api_contract import ChatMessage, ContextUsage
 from model_registry import ModelSpec
 
-
-ESTIMATION_METHOD = "langchain_approximate_v1"
+ESTIMATION_METHOD: Literal["langchain_approximate_v1"] = "langchain_approximate_v1"
 SAFETY_MARGIN_RATIO = 0.10
 MINIMUM_SAFETY_MARGIN_TOKENS = 256
 
@@ -37,9 +37,7 @@ def plan_context(
         ceil(model.context_window_tokens * SAFETY_MARGIN_RATIO),
     )
     input_budget_tokens = (
-        model.context_window_tokens
-        - model.max_output_tokens
-        - safety_margin_tokens
+        model.context_window_tokens - model.max_output_tokens - safety_margin_tokens
     )
     if input_budget_tokens <= 0:
         raise RuntimeError(
@@ -81,7 +79,7 @@ def estimate_input_tokens(
 ) -> int:
     """Estimate serialized system and chat-message tokens without network calls."""
 
-    langchain_messages = [SystemMessage(content=system_prompt)]
+    langchain_messages: list[BaseMessage] = [SystemMessage(content=system_prompt)]
     for message in messages:
         if message.role == "user":
             langchain_messages.append(HumanMessage(content=message.content))
@@ -96,7 +94,7 @@ def _select_recent_complete_turns(
     input_budget_tokens: int,
 ) -> tuple[ChatMessage, ...]:
     newest_user_message = messages[-1]
-    selected_messages = (newest_user_message,)
+    selected_messages: tuple[ChatMessage, ...] = (newest_user_message,)
 
     if estimate_input_tokens(system_prompt, selected_messages) > input_budget_tokens:
         raise ContextWindowExceededError(

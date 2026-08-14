@@ -4,7 +4,6 @@ import requests
 import frontend_catalog
 from frontend_catalog import ModelCatalogError, fetch_model_catalog, models_for_provider
 
-
 VALID_CATALOG = {
     "default_model_key": "groq-gpt-oss-20b",
     "models": [

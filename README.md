@@ -1,22 +1,38 @@
 # Agentic Chatbot with FastAPI
 
 [![CI](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/workflows/ci.yml/badge.svg)](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/workflows/codeql.yml/badge.svg)](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/workflows/codeql.yml)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Coverage gate: 80%](https://img.shields.io/badge/branch_coverage-%E2%89%A580%25-success)](CONTRIBUTING.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A learning-focused AI agent application built with a Streamlit frontend, a FastAPI backend, and LangChain's agent abstraction. It supports Groq and OpenAI models and can optionally give the agent access to Tavily web search.
+A typed and tested AI-agent application built with a Streamlit frontend, FastAPI backend, and LangChain/LangGraph orchestration. It supports bounded optional Tavily search, auditable source provenance, deterministic context budgeting, and versioned NDJSON answer streaming across Groq and OpenAI models.
+
+## Engineering highlights
+
+- Backend-owned, typed model and API contracts prevent frontend/provider coupling.
+- Deterministic recent-window context selection exposes what was omitted and why.
+- Bounded search normalizes untrusted provider output into application-owned provenance.
+- Versioned NDJSON events enforce ordering, one terminal outcome, and atomic history commits.
+- Offline tests use fake providers; local and CI gates require lint, formatting, static types, branch coverage, compilation, and CodeQL analysis.
+- The [engineering learning journal](docs/learning/README.md) preserves decisions, alternatives, evidence, and transferable lessons for every checkpoint.
 
 ## Architecture
 
-```text
-User
-  -> Streamlit UI
-  -> FastAPI /models catalog
-  -> FastAPI /chat/stream NDJSON endpoint
-  -> deterministic context-budget planner
-  -> LangChain agent
-     -> Groq or OpenAI
-     -> optional Tavily search
-  -> normalized search provenance
-  -> response
+```mermaid
+flowchart LR
+    U["User"] --> UI["Streamlit UI"]
+    UI -->|"GET /models"| API["FastAPI"]
+    UI -->|"POST /chat/stream"| API
+    API --> C["Typed API contract"]
+    C --> B["Context-budget planner"]
+    B --> A["LangChain / LangGraph agent"]
+    A --> M["Groq or OpenAI"]
+    A -->|"optional, max 3 calls"| T["Tavily search"]
+    T --> P["Normalized source provenance"]
+    M --> S["Versioned NDJSON events"]
+    P --> S
+    S --> UI
 ```
 
 ## Technology stack
@@ -29,6 +45,8 @@ User
 - Groq and OpenAI as model providers
 - Tavily for optional web search
 - Pipenv for dependency and environment management
+- Ruff, mypy, pytest, and coverage.py for enforced quality gates
+- GitHub Actions, CodeQL, and Dependabot for repository automation
 
 ## Prerequisites
 
@@ -227,15 +245,20 @@ One request may perform at most three basic Tavily searches with at most two sou
 
 The UI renders retrieved sources separately from the assistant's Markdown. Source titles and snippets are untrusted web data. A retrieved source is provenance, not a claim-level citation: this checkpoint proves what the search tool returned, but does not yet prove that every sentence in the answer is supported by a source.
 
-## Tests
+## Quality gates
 
-Run the offline test suite with:
+Install the locked development environment, then run the same checks required by pull requests:
 
 ```powershell
-python -m pipenv run python -m pytest
+python -m pipenv sync --dev
+python -m pipenv verify
+python -m pipenv run ruff check .
+python -m pipenv run ruff format --check .
+python -m pipenv run mypy
+python -m pipenv run python -m pytest --cov=. --cov-report=term-missing --cov-fail-under=80
 ```
 
-The tests use fake providers and do not make Groq, OpenAI, or Tavily requests.
+The 135 tests use fake providers and do not make Groq, OpenAI, or Tavily requests. Coverage uses branch measurement, and CI rejects a total below 80%. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow and formatting command.
 
 ## Current capabilities
 
@@ -250,11 +273,11 @@ The tests use fake providers and do not make Groq, OpenAI, or Tavily requests.
 
 ## Current limitations
 
-This repository is intentionally still a learning prototype. Conversation history is temporary and browser-session-owned; the project does not yet provide persistent memory, context summarization, claim-level citation validation, exact provider token accounting, resumable streams, strong cross-provider cancellation, provider-specific failure normalization, production-grade observability, or an explicit custom LangGraph workflow.
+This is a portfolio-ready engineering project, not a deployed production service. Conversation history remains temporary and browser-session-owned; the project does not yet provide authentication, authorization, persistent storage, deployment infrastructure, rate limiting, production telemetry, service-level objectives, resumable streams, strong cross-provider cancellation, claim-level citation validation, exact provider token accounting, or an explicit custom LangGraph workflow.
 
 ## Learning roadmap
 
-The next checkpoints can add claim-level grounding, then eventually build an explicit LangGraph workflow with evaluation and observability.
+Checkpoint 10 will establish an offline AI-quality evaluation baseline. Later checkpoints can add claim-level grounding, an explicit LangGraph workflow, observability, persistence and identity, deployment hardening, and load/resilience testing. These are deliberately separated so this repository does not claim production readiness before it has production evidence.
 
 ## Learning journal
 
@@ -265,3 +288,7 @@ The project's plans, decision reasoning, implementation outcomes, and transferab
 - Keep secrets only in `.env` or your deployment platform's secret manager.
 - Use `.env.example` to document required variable names without real values.
 - If a secret is ever committed, revoke and replace it; deleting it from the latest commit is not sufficient.
+
+## License
+
+This project is available under the [MIT License](LICENSE).

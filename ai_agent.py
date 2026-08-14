@@ -1,15 +1,23 @@
 import json
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Iterator, Literal
+from typing import Any, Literal, Protocol, cast
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain.agents.middleware.tool_call_limit import ToolCallLimitExceededError
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    ToolMessage,
+)
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch
 from langchain_tavily._utilities import TavilySearchAPIWrapper
-from langchain_openai import ChatOpenAI
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -43,6 +51,20 @@ class InvalidAgentResponseError(RuntimeError):
 
 class AgentToolLimitExceededError(RuntimeError):
     """Raised when one agent request exceeds its bounded tool-call allowance."""
+
+
+class AgentRunner(Protocol):
+    """The small LangGraph surface owned by this application."""
+
+    def invoke(self, state: dict[str, Any]) -> dict[str, Any]: ...
+
+    def stream(
+        self,
+        state: dict[str, Any],
+        *,
+        stream_mode: list[str],
+        version: str,
+    ) -> Iterator[dict[str, Any]]: ...
 
 
 class SearchInput(BaseModel):
@@ -80,23 +102,23 @@ class AgentStreamEvent:
 class PreparedAgentRun:
     """An eagerly validated agent and its canonical input state."""
 
-    agent: object
-    state: dict
+    agent: AgentRunner
+    state: dict[str, Any]
     allow_search: bool
 
 
-def _require_secret(secret: SecretStr | None, variable_name: str) -> str:
+def _require_secret(secret: SecretStr | None, variable_name: str) -> SecretStr:
     if secret is None or not secret.get_secret_value().strip():
         raise MissingConfigurationError(
             f"{variable_name} is required for this request. "
             "Add it to your .env file or environment."
         )
 
-    return secret.get_secret_value()
+    return secret
 
 
-def _convert_messages_to_langchain(messages: list[ChatMessage]):
-    langchain_messages = []
+def _convert_messages_to_langchain(messages: list[ChatMessage]) -> list[BaseMessage]:
+    langchain_messages: list[BaseMessage] = []
     for message in messages:
         if message.role == "user":
             langchain_messages.append(HumanMessage(content=message.content))
@@ -156,9 +178,9 @@ def prepare_agent_run(
         tavily_api_key = _require_secret(app_settings.tavily_api_key, "TAVILY_API_KEY")
 
     if model.provider == Provider.GROQ:
-        llm = ChatGroq(
+        llm: BaseChatModel = ChatGroq(
             model=model.model_id,
-            groq_api_key=provider_api_key,
+            api_key=provider_api_key,
             max_tokens=model.max_output_tokens,
         )
     else:
@@ -180,8 +202,8 @@ def prepare_agent_run(
                 include_images=False,
                 args_schema=SearchInput,
                 handle_tool_error=True,
-                api_wrapper=TavilySearchAPIWrapper(
-                    tavily_api_key=tavily_api_key,
+                api_wrapper=TavilySearchAPIWrapper.model_validate(
+                    {"tavily_api_key": tavily_api_key.get_secret_value()}
                 ),
             )
         ]
@@ -200,11 +222,14 @@ def prepare_agent_run(
         else []
     )
 
-    agent = create_agent(
-        model=llm,
-        tools=tools,
-        system_prompt=system_prompt,
-        middleware=middleware,
+    agent = cast(
+        AgentRunner,
+        create_agent(
+            model=llm,
+            tools=tools,
+            system_prompt=system_prompt,
+            middleware=middleware,
+        ),
     )
 
     return PreparedAgentRun(
@@ -220,7 +245,7 @@ def stream_prepared_agent(
     """Translate LangGraph v2 events into safe application-level updates."""
 
     yield AgentStreamEvent("status", "model_running")
-    response_messages = []
+    response_messages: list[BaseMessage] = []
     buffered_text: list[str] = []
     raw_stream = None
 
@@ -236,9 +261,12 @@ def stream_prepared_agent(
 
             if part_type == "messages" and isinstance(data, tuple):
                 chunk = data[0]
-                if isinstance(chunk, AIMessageChunk) and isinstance(chunk.content, str):
-                    if chunk.content:
-                        buffered_text.append(chunk.content)
+                if (
+                    isinstance(chunk, AIMessageChunk)
+                    and isinstance(chunk.content, str)
+                    and chunk.content
+                ):
+                    buffered_text.append(chunk.content)
                 continue
 
             if part_type != "updates" or not isinstance(data, dict):
@@ -282,7 +310,10 @@ def stream_prepared_agent(
     yield AgentStreamEvent("complete", outcome)
 
 
-def _outcome_from_messages(response_messages, allow_search: bool) -> AgentOutcome:
+def _outcome_from_messages(
+    response_messages: Sequence[BaseMessage],
+    allow_search: bool,
+) -> AgentOutcome:
     ai_messages = [msg for msg in response_messages if isinstance(msg, AIMessage)]
 
     if ai_messages:
@@ -303,9 +334,12 @@ def _outcome_from_messages(response_messages, allow_search: bool) -> AgentOutcom
     )
 
 
-def _extract_search_evidence(messages, allowed: bool) -> SearchEvidence:
-    tool_calls_by_id = {}
-    executions = []
+def _extract_search_evidence(
+    messages: Sequence[BaseMessage],
+    allowed: bool,
+) -> SearchEvidence:
+    tool_calls_by_id: dict[str, str] = {}
+    executions: list[SearchExecution] = []
 
     for message in messages:
         if isinstance(message, AIMessage):
@@ -315,7 +349,7 @@ def _extract_search_evidence(messages, allowed: bool) -> SearchEvidence:
                 tool_call_id = tool_call.get("id")
                 query = tool_call.get("args", {}).get("query")
                 try:
-                    validated_query = SearchInput(query=query).query
+                    validated_query = SearchInput.model_validate({"query": query}).query
                 except ValidationError as exc:
                     raise InvalidAgentResponseError(
                         "The agent returned an invalid web-search query."
@@ -361,7 +395,9 @@ def _normalize_search_execution(
         return SearchExecution(query=query, status="failed")
 
     try:
-        payload = json.loads(message.content) if isinstance(message.content, str) else None
+        payload = (
+            json.loads(message.content) if isinstance(message.content, str) else None
+        )
     except (TypeError, json.JSONDecodeError):
         payload = None
 

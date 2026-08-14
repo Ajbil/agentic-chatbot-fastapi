@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+
 import requests
 from pydantic import ValidationError
 
@@ -5,6 +7,7 @@ from api_contract import (
     CHAT_STREAM_EVENT_ADAPTER,
     ChatRequest,
     ChatResponse,
+    ChatStreamEvent,
     ErrorResponse,
     StreamCompleteEvent,
     StreamDeltaEvent,
@@ -79,7 +82,7 @@ def stream_chat(
     connect_timeout: float,
     read_timeout: float,
     request: ChatRequest,
-):
+) -> Iterator[ChatStreamEvent]:
     """Yield validated chat events while enforcing the public stream protocol."""
 
     try:

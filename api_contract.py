@@ -1,7 +1,14 @@
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
-
+from pydantic import (
+    AnyHttpUrl,
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 
 DEFAULT_SYSTEM_PROMPT = "Act as a helpful AI Assistant"
 MAX_MESSAGES = 50
@@ -51,7 +58,7 @@ class ChatRequest(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def require_canonical_turn_order(self):
+    def require_canonical_turn_order(self) -> Self:
         for index, message in enumerate(self.messages):
             expected_role = "user" if index % 2 == 0 else "assistant"
             if message.role != expected_role:
@@ -85,7 +92,7 @@ class ContextUsage(BaseModel):
     was_truncated: bool
 
     @model_validator(mode="after")
-    def require_internally_consistent_evidence(self):
+    def require_internally_consistent_evidence(self) -> Self:
         if self.input_budget_tokens != (
             self.context_window_tokens
             - self.reserved_output_tokens
@@ -143,7 +150,7 @@ class SearchExecution(BaseModel):
         return value.strip()
 
     @model_validator(mode="after")
-    def require_sources_only_for_success(self):
+    def require_sources_only_for_success(self) -> Self:
         if self.status == "succeeded" and not self.sources:
             raise ValueError("A successful search must contain at least one source.")
         if self.status == "failed" and self.sources:
@@ -164,7 +171,7 @@ class SearchEvidence(BaseModel):
     )
 
     @model_validator(mode="after")
-    def require_consistent_search_state(self):
+    def require_consistent_search_state(self) -> Self:
         if self.attempted != bool(self.executions):
             raise ValueError("Search attempted must match whether executions exist.")
         if not self.allowed and self.attempted:
@@ -258,4 +265,4 @@ ChatStreamEvent = Annotated[
     | StreamErrorEvent,
     Field(discriminator="type"),
 ]
-CHAT_STREAM_EVENT_ADAPTER = TypeAdapter(ChatStreamEvent)
+CHAT_STREAM_EVENT_ADAPTER: TypeAdapter[ChatStreamEvent] = TypeAdapter(ChatStreamEvent)

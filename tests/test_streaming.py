@@ -69,11 +69,21 @@ class FakeStreamResponse:
 
 def successful_events(reply="Hello world"):
     return [
-        {"version": 1, "type": "started", "sequence": 1, "model_key": "groq-gpt-oss-20b"},
+        {
+            "version": 1,
+            "type": "started",
+            "sequence": 1,
+            "model_key": "groq-gpt-oss-20b",
+        },
         {"version": 1, "type": "status", "sequence": 2, "stage": "model_running"},
         {"version": 1, "type": "delta", "sequence": 3, "text": "Hello "},
         {"version": 1, "type": "delta", "sequence": 4, "text": "world"},
-        {"version": 1, "type": "complete", "sequence": 5, "response": response_payload(reply)},
+        {
+            "version": 1,
+            "type": "complete",
+            "sequence": 5,
+            "response": response_payload(reply),
+        },
     ]
 
 
@@ -89,7 +99,10 @@ def test_frontend_validates_stream_and_closes_response(monkeypatch):
     events = list(stream_chat("http://backend/chat/stream", 10, 120, request_model()))
 
     assert isinstance(events[0], StreamStartedEvent)
-    assert [event.text for event in events if isinstance(event, StreamDeltaEvent)] == ["Hello ", "world"]
+    assert [event.text for event in events if isinstance(event, StreamDeltaEvent)] == [
+        "Hello ",
+        "world",
+    ]
     assert isinstance(events[-1], StreamCompleteEvent)
     assert captured["stream"] is True
     assert captured["timeout"] == (10, 120)
@@ -100,15 +113,24 @@ def test_frontend_validates_stream_and_closes_response(monkeypatch):
     ("events", "message"),
     [
         ([{**successful_events()[1], "sequence": 1}], "did not begin"),
-        ([successful_events()[0], {**successful_events()[2], "sequence": 4}], "sequence"),
+        (
+            [successful_events()[0], {**successful_events()[2], "sequence": 4}],
+            "sequence",
+        ),
         (successful_events()[:-1], "terminal"),
         (successful_events("different"), "did not match"),
-        (successful_events() + [{"version": 1, "type": "status", "sequence": 6, "stage": "finalizing"}], "continued"),
+        (
+            successful_events()
+            + [{"version": 1, "type": "status", "sequence": 6, "stage": "finalizing"}],
+            "continued",
+        ),
     ],
 )
 def test_frontend_rejects_broken_stream_protocol(monkeypatch, events, message):
     response = FakeStreamResponse(lines=encode_events(events))
-    monkeypatch.setattr(frontend_chat.requests, "post", lambda *args, **kwargs: response)
+    monkeypatch.setattr(
+        frontend_chat.requests, "post", lambda *args, **kwargs: response
+    )
 
     with pytest.raises(ChatClientError, match=message) as captured:
         list(stream_chat("http://backend/chat/stream", 10, 120, request_model()))
@@ -120,9 +142,17 @@ def test_frontend_rejects_broken_stream_protocol(monkeypatch, events, message):
 def test_frontend_preserves_pre_stream_http_error(monkeypatch):
     response = FakeStreamResponse(
         status_code=503,
-        payload={"error": {"code": "service_configuration_error", "message": "Missing key", "details": []}},
+        payload={
+            "error": {
+                "code": "service_configuration_error",
+                "message": "Missing key",
+                "details": [],
+            }
+        },
     )
-    monkeypatch.setattr(frontend_chat.requests, "post", lambda *args, **kwargs: response)
+    monkeypatch.setattr(
+        frontend_chat.requests, "post", lambda *args, **kwargs: response
+    )
 
     with pytest.raises(ChatClientError) as captured:
         list(stream_chat("http://backend/chat/stream", 10, 120, request_model()))
@@ -133,7 +163,16 @@ def test_frontend_preserves_pre_stream_http_error(monkeypatch):
 
 def test_frontend_preserves_partial_reply_on_terminal_error(monkeypatch):
     events = successful_events()[:3] + [
-        {"version": 1, "type": "error", "sequence": 4, "error": {"code": "upstream_stream_failed", "message": "Stream failed", "details": []}}
+        {
+            "version": 1,
+            "type": "error",
+            "sequence": 4,
+            "error": {
+                "code": "upstream_stream_failed",
+                "message": "Stream failed",
+                "details": [],
+            },
+        }
     ]
     monkeypatch.setattr(
         frontend_chat.requests,
@@ -151,28 +190,92 @@ def test_frontend_preserves_partial_reply_on_terminal_error(monkeypatch):
 def test_agent_stream_buffers_tool_decision_text_and_emits_final_answer():
     class FakeAgent:
         def stream(self, state, stream_mode, version):
-            yield {"type": "messages", "ns": (), "data": (AIMessageChunk(content="I will search"), {})}
+            yield {
+                "type": "messages",
+                "ns": (),
+                "data": (AIMessageChunk(content="I will search"), {}),
+            }
             yield {
                 "type": "updates",
                 "ns": (),
-                "data": {"model": {"messages": [AIMessage(content="I will search", tool_calls=[{"name": "tavily_search", "args": {"query": "news"}, "id": "s1", "type": "tool_call"}])]}}
+                "data": {
+                    "model": {
+                        "messages": [
+                            AIMessage(
+                                content="I will search",
+                                tool_calls=[
+                                    {
+                                        "name": "tavily_search",
+                                        "args": {"query": "news"},
+                                        "id": "s1",
+                                        "type": "tool_call",
+                                    }
+                                ],
+                            )
+                        ]
+                    }
+                },
             }
             from langchain_core.messages import ToolMessage
+
             yield {
                 "type": "updates",
                 "ns": (),
-                "data": {"tools": {"messages": [ToolMessage(name="tavily_search", tool_call_id="s1", content=json.dumps({"results": [{"title": "News", "url": "https://example.com", "content": "Evidence"}]}))]}}
+                "data": {
+                    "tools": {
+                        "messages": [
+                            ToolMessage(
+                                name="tavily_search",
+                                tool_call_id="s1",
+                                content=json.dumps(
+                                    {
+                                        "results": [
+                                            {
+                                                "title": "News",
+                                                "url": "https://example.com",
+                                                "content": "Evidence",
+                                            }
+                                        ]
+                                    }
+                                ),
+                            )
+                        ]
+                    }
+                },
             }
-            yield {"type": "messages", "ns": (), "data": (AIMessageChunk(content="Final "), {})}
-            yield {"type": "messages", "ns": (), "data": (AIMessageChunk(content="answer"), {})}
-            yield {"type": "updates", "ns": (), "data": {"model": {"messages": [AIMessage(content="Final answer")]}}}
+            yield {
+                "type": "messages",
+                "ns": (),
+                "data": (AIMessageChunk(content="Final "), {}),
+            }
+            yield {
+                "type": "messages",
+                "ns": (),
+                "data": (AIMessageChunk(content="answer"), {}),
+            }
+            yield {
+                "type": "updates",
+                "ns": (),
+                "data": {"model": {"messages": [AIMessage(content="Final answer")]}},
+            }
 
-    events = list(ai_agent.stream_prepared_agent(PreparedAgentRun(FakeAgent(), {"messages": []}, True)))
+    events = list(
+        ai_agent.stream_prepared_agent(
+            PreparedAgentRun(FakeAgent(), {"messages": []}, True)
+        )
+    )
 
-    assert [event.value for event in events if event.type == "delta"] == ["Final ", "answer"]
+    assert [event.value for event in events if event.type == "delta"] == [
+        "Final ",
+        "answer",
+    ]
     assert "I will search" not in [event.value for event in events]
     assert [event.value for event in events if event.type == "status"] == [
-        "model_running", "search_running", "search_results_received", "model_running", "finalizing"
+        "model_running",
+        "search_running",
+        "search_results_received",
+        "model_running",
+        "finalizing",
     ]
     assert events[-1].value.reply == "Final answer"
     assert events[-1].value.search.executions[0].query == "news"
@@ -184,14 +287,23 @@ def test_backend_stream_is_contiguous_and_terminal(monkeypatch):
     monkeypatch.setattr(
         backend,
         "stream_prepared_agent",
-        lambda value: iter([
-            AgentStreamEvent("status", "model_running"),
-            AgentStreamEvent("delta", "Hello "),
-            AgentStreamEvent("delta", "world"),
-            AgentStreamEvent("complete", AgentOutcome("Hello world", SearchEvidence(allowed=False, attempted=False))),
-        ]),
+        lambda value: iter(
+            [
+                AgentStreamEvent("status", "model_running"),
+                AgentStreamEvent("delta", "Hello "),
+                AgentStreamEvent("delta", "world"),
+                AgentStreamEvent(
+                    "complete",
+                    AgentOutcome(
+                        "Hello world", SearchEvidence(allowed=False, attempted=False)
+                    ),
+                ),
+            ]
+        ),
     )
-    response = TestClient(backend.app).post("/chat/stream", json=request_model().model_dump(mode="json"))
+    response = TestClient(backend.app).post(
+        "/chat/stream", json=request_model().model_dump(mode="json")
+    )
     events = [json.loads(line) for line in response.text.splitlines()]
 
     assert response.status_code == 200
@@ -202,14 +314,20 @@ def test_backend_stream_is_contiguous_and_terminal(monkeypatch):
 
 
 def test_backend_converts_midstream_exception_to_safe_terminal_event(monkeypatch):
-    monkeypatch.setattr(backend, "prepare_agent_run", lambda *args, **kwargs: PreparedAgentRun(object(), {}, False))
+    monkeypatch.setattr(
+        backend,
+        "prepare_agent_run",
+        lambda *args, **kwargs: PreparedAgentRun(object(), {}, False),
+    )
 
     def failed_stream(value):
         yield AgentStreamEvent("delta", "Partial")
         raise RuntimeError("secret provider diagnostic")
 
     monkeypatch.setattr(backend, "stream_prepared_agent", failed_stream)
-    response = TestClient(backend.app).post("/chat/stream", json=request_model().model_dump(mode="json"))
+    response = TestClient(backend.app).post(
+        "/chat/stream", json=request_model().model_dump(mode="json")
+    )
     events = [json.loads(line) for line in response.text.splitlines()]
 
     assert events[-1]["type"] == "error"

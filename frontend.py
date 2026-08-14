@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+
 import streamlit as st
 from pydantic import ValidationError
 
@@ -5,6 +7,7 @@ from api_contract import (
     DEFAULT_SYSTEM_PROMPT,
     MAX_MESSAGE_CHARACTERS,
     MAX_SYSTEM_PROMPT_CHARACTERS,
+    ChatResponse,
     SearchEvidence,
     StreamCompleteEvent,
     StreamDeltaEvent,
@@ -19,7 +22,7 @@ from frontend_session import (
     ConversationStateError,
     TurnAttempt,
 )
-
+from model_registry import ModelSpec, ModelsResponse
 
 SESSION_STATE_KEY = "conversation_state"
 WIDGET_STATE_KEYS = (
@@ -119,11 +122,11 @@ def _send_attempt(
         "search_results_received": "Processing retrieved sources...",
         "finalizing": "Finalizing the answer...",
     }
-    completed_response = None
+    completed_response: ChatResponse | None = None
     with st.chat_message("assistant"):
         status_placeholder = st.empty()
 
-        def answer_fragments():
+        def answer_fragments() -> Iterator[str]:
             nonlocal completed_response
             for event in stream_chat(
                 backend_chat_stream_url,
@@ -209,7 +212,11 @@ def _render_failed_turn(
         )
 
 
-def _render_locked_settings(state, catalog, models_by_key):
+def _render_locked_settings(
+    state: ConversationState,
+    catalog: ModelsResponse,
+    models_by_key: dict[str, ModelSpec],
+) -> ConversationSettings | None:
     locked_settings = state.settings
     if locked_settings is None:
         raise ConversationStateError("Locked settings are unavailable.")
@@ -259,7 +266,10 @@ def _render_locked_settings(state, catalog, models_by_key):
     return locked_settings
 
 
-def _render_editable_settings(catalog, models_by_key):
+def _render_editable_settings(
+    catalog: ModelsResponse,
+    models_by_key: dict[str, ModelSpec],
+) -> ConversationSettings:
     default_model = models_by_key[catalog.default_model_key]
     providers = list(dict.fromkeys(model.provider.value for model in catalog.models))
 
@@ -311,13 +321,15 @@ def _render_editable_settings(catalog, models_by_key):
     )
 
 
-def main():
+def main() -> None:
     settings = get_settings()
     state = _conversation_state()
 
     st.set_page_config(page_title="Agentic Chatbot", layout="centered")
     st.title("Agentic Chatbot")
-    st.caption("Session-scoped conversation history with Groq, OpenAI, and optional web search.")
+    st.caption(
+        "Session-scoped conversation history with Groq, OpenAI, and optional web search."
+    )
 
     st.sidebar.header("Conversation settings")
     st.sidebar.button(
