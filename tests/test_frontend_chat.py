@@ -50,9 +50,9 @@ def test_frontend_sends_and_validates_canonical_contract(monkeypatch):
             {
                 "model_key": "groq-gpt-oss-20b",
                 "reply": "Typed reply",
-                    "context": context_payload(),
-                    "search": {"allowed": False, "attempted": False, "executions": []},
-                },
+                "context": context_payload(),
+                "search": {"allowed": False, "attempted": False, "executions": []},
+            },
         )
 
     monkeypatch.setattr(frontend_chat.requests, "post", fake_post)

@@ -116,7 +116,9 @@ def test_follow_up_request_contains_complete_committed_history():
 
     second_attempt = state.begin_turn("Follow-up", settings())
 
-    assert [(message.role, message.content) for message in second_attempt.request.messages] == [
+    assert [
+        (message.role, message.content) for message in second_attempt.request.messages
+    ] == [
         ("user", "First question"),
         ("assistant", "First answer"),
         ("user", "Follow-up"),

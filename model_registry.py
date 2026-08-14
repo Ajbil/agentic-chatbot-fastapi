@@ -1,4 +1,5 @@
 from enum import StrEnum
+from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -22,7 +23,7 @@ class ModelSpec(BaseModel):
     supports_tool_calling: bool
 
     @model_validator(mode="after")
-    def validate_token_budget(self):
+    def validate_token_budget(self) -> Self:
         if self.max_output_tokens >= self.context_window_tokens:
             raise ValueError(
                 "max_output_tokens must be smaller than context_window_tokens."
@@ -35,11 +36,9 @@ class ModelsResponse(BaseModel):
     models: tuple[ModelSpec, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_catalog(self):
+    def validate_catalog(self) -> Self:
         model_keys = [model.key for model in self.models]
-        provider_and_ids = [
-            (model.provider, model.model_id) for model in self.models
-        ]
+        provider_and_ids = [(model.provider, model.model_id) for model in self.models]
 
         if len(set(model_keys)) != len(model_keys):
             raise ValueError("Model keys must be unique.")
@@ -55,7 +54,7 @@ class UnsupportedModelError(ValueError):
     """Raised when a provider/model combination is not in the registry."""
 
 
-MODEL_CATALOG = (
+MODEL_CATALOG: tuple[ModelSpec, ...] = (
     ModelSpec(
         key="groq-gpt-oss-20b",
         provider=Provider.GROQ,
@@ -88,9 +87,12 @@ MODEL_CATALOG = (
 DEFAULT_MODEL_KEY = "groq-gpt-oss-20b"
 
 
-def _build_indexes():
-    models_by_key = {}
-    models_by_provider_and_id = {}
+def _build_indexes() -> tuple[
+    dict[str, ModelSpec],
+    dict[tuple[Provider, str], ModelSpec],
+]:
+    models_by_key: dict[str, ModelSpec] = {}
+    models_by_provider_and_id: dict[tuple[Provider, str], ModelSpec] = {}
 
     for model in MODEL_CATALOG:
         provider_and_id = (model.provider, model.model_id)

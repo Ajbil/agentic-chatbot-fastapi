@@ -1,5 +1,5 @@
-import os
 import json
+import os
 import subprocess
 import sys
 
@@ -101,7 +101,7 @@ def test_groq_request_does_not_require_other_credentials(monkeypatch):
     assert response.reply == "fake reply"
     assert response.search.allowed is False
     assert captured["model"] == "test-model"
-    assert captured["groq_api_key"] == "groq-test-key"
+    assert captured["api_key"].get_secret_value() == "groq-test-key"
     assert captured["max_tokens"] == 128
 
 
@@ -126,7 +126,7 @@ def test_openai_request_does_not_require_other_credentials(monkeypatch):
 
     assert response.reply == "openai reply"
     assert captured["model"] == "test-model"
-    assert captured["api_key"] == "openai-test-key"
+    assert captured["api_key"].get_secret_value() == "openai-test-key"
     assert captured["max_completion_tokens"] == 128
 
 
@@ -168,8 +168,7 @@ def test_search_builds_tavily_tool_with_its_own_credential(monkeypatch):
     assert captured["include_raw_content"] is False
     assert captured["include_images"] is False
     assert (
-        captured["api_wrapper"].tavily_api_key.get_secret_value()
-        == "tavily-test-key"
+        captured["api_wrapper"].tavily_api_key.get_secret_value() == "tavily-test-key"
     )
     limiter = agent_configuration["middleware"][0]
     assert limiter.tool_name == "tavily_search"
@@ -187,9 +186,7 @@ def test_real_tavily_tool_constructs_with_explicit_credential():
     )
 
     assert tool.max_results == 2
-    assert (
-        tool.api_wrapper.tavily_api_key.get_secret_value() == "test-tavily-key"
-    )
+    assert tool.api_wrapper.tavily_api_key.get_secret_value() == "test-tavily-key"
 
 
 def test_agent_converts_canonical_history(monkeypatch):

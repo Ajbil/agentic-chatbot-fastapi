@@ -6,7 +6,6 @@ from streamlit.testing.v1 import AppTest
 import frontend_catalog
 import frontend_chat
 
-
 FRONTEND_PATH = Path(__file__).resolve().parents[1] / "frontend.py"
 
 
@@ -49,12 +48,23 @@ class FakeResponse:
 
     def iter_lines(self, decode_unicode=False):
         events = [
-            {"version": 1, "type": "started", "sequence": 1, "model_key": self.payload["model_key"]},
+            {
+                "version": 1,
+                "type": "started",
+                "sequence": 1,
+                "model_key": self.payload["model_key"],
+            },
             {"version": 1, "type": "status", "sequence": 2, "stage": "model_running"},
-            {"version": 1, "type": "delta", "sequence": 3, "text": self.payload["reply"]},
+            {
+                "version": 1,
+                "type": "delta",
+                "sequence": 3,
+                "text": self.payload["reply"],
+            },
             {"version": 1, "type": "complete", "sequence": 4, "response": self.payload},
         ]
         import json
+
         return iter(json.dumps(event) for event in events)
 
     def close(self):
@@ -166,9 +176,7 @@ def test_streamlit_preserves_full_transcript_and_discloses_backend_trimming(
         "Follow-up",
         "Answer 2",
     ]
-    assert any(
-        "omitted 2 older message(s)" in warning.value for warning in app.warning
-    )
+    assert any("omitted 2 older message(s)" in warning.value for warning in app.warning)
     assert any("80 / 113,868 tokens" in caption.value for caption in app.caption)
 
 
@@ -362,7 +370,9 @@ def test_new_chat_clears_history_and_unlocks_settings(monkeypatch):
     app.chat_input[0].set_value("Question").run()
     assert len(app.chat_message) == 2
 
-    new_chat_button = next(button for button in app.button if button.label == "New chat")
+    new_chat_button = next(
+        button for button in app.button if button.label == "New chat"
+    )
     new_chat_button.click().run()
 
     assert len(app.chat_message) == 0
@@ -400,6 +410,4 @@ def test_history_remains_visible_when_catalog_later_fails(monkeypatch):
         "Saved answer",
     ]
     assert app.chat_input[0].disabled is True
-    assert any(
-        "Could not load supported models" in error.value for error in app.error
-    )
+    assert any("Could not load supported models" in error.value for error in app.error)

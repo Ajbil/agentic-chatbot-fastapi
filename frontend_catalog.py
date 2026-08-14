@@ -13,7 +13,9 @@ def fetch_model_catalog(url: str, timeout: float) -> ModelsResponse:
         response = requests.get(url, timeout=timeout)
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise ModelCatalogError(f"The backend model catalog request failed: {exc}") from exc
+        raise ModelCatalogError(
+            f"The backend model catalog request failed: {exc}"
+        ) from exc
 
     try:
         payload = response.json()
@@ -28,6 +30,4 @@ def models_for_provider(
     catalog: ModelsResponse,
     provider: str,
 ) -> tuple[ModelSpec, ...]:
-    return tuple(
-        model for model in catalog.models if model.provider.value == provider
-    )
+    return tuple(model for model in catalog.models if model.provider.value == provider)

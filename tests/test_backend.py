@@ -10,7 +10,6 @@ from ai_agent import (
 from api_contract import SearchEvidence
 from model_registry import DEFAULT_MODEL_KEY, ModelSpec, Provider
 
-
 client = TestClient(backend.app)
 
 
@@ -118,7 +117,9 @@ def test_search_is_rejected_when_model_lacks_tool_calling(monkeypatch):
         max_output_tokens=128,
         supports_tool_calling=False,
     )
-    monkeypatch.setattr(backend, "get_model_by_key", lambda model_key: model_without_tools)
+    monkeypatch.setattr(
+        backend, "get_model_by_key", lambda model_key: model_without_tools
+    )
 
     def unexpected_agent(*args, **kwargs):
         raise AssertionError("Agent must not run with unsupported search tools")
