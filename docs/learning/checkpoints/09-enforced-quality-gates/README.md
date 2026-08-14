@@ -2,10 +2,10 @@
 
 | Field | Value |
 |---|---|
-| Status | In progress |
+| Status | In review |
 | Date | 2026-08-14 |
 | Branch | `codex/enforced-quality-gates` |
-| Pull request | Pending |
+| Pull request | [#9 - Add enforced quality gates and portfolio governance](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/9) |
 | Implementation commit | [`1c21bcb`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/1c21bcb) |
 
 ## Objective
@@ -138,7 +138,9 @@ A portfolio project also needs to demonstrate how change is governed. Reviewers 
 - `python -m pipenv run mypy`: no issues in 10 production modules.
 - `python -m pipenv run python -m pytest --cov=. --cov-report=term-missing --cov-fail-under=80`: 135 passed; 90.06% total branch coverage against an 80% minimum.
 - All 10 application modules compile successfully with Python 3.12.
-- GitHub required checks and branch-protection evidence: pending pull request.
+- [CI run `31800538104`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/31800538104) passed the independent `quality` and `test` jobs on the draft pull request.
+- [CodeQL run `31800538203`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/31800538203) passed Python analysis on the draft pull request.
+- GitHub `main` protection requires an up-to-date pull request, `quality`, `test`, `Analyze (python)`, and `CodeQL`, plus resolved conversations; it applies to administrators and blocks force-pushes and deletion.
 
 ## Senior-engineering lessons
 
