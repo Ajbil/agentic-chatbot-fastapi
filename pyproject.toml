@@ -26,6 +26,7 @@ files = [
     "ai_agent.py",
     "backend.py",
     "frontend.py",
+    "evaluations",
 ]
 check_untyped_defs = true
 disallow_untyped_defs = true

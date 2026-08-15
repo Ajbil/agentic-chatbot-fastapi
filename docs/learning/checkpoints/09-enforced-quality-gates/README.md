@@ -2,11 +2,12 @@
 
 | Field | Value |
 |---|---|
-| Status | In review |
+| Status | Complete |
 | Date | 2026-08-14 |
 | Branch | `codex/enforced-quality-gates` |
 | Pull request | [#9 - Add enforced quality gates and portfolio governance](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/9) |
 | Implementation commit | [`1c21bcb`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/1c21bcb) |
+| Merge commit | [`d85c52f`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/d85c52f) |
 
 ## Objective
 
