@@ -2,10 +2,12 @@
 
 | Field | Value |
 |---|---|
-| Status | In progress |
+| Status | In review |
 | Date | 2026-08-14 |
 | Branch | `codex/deterministic-ai-evaluation` |
-| Pull request | Pending |
+| Pull request | [#16 - Add deterministic AI evaluation baseline](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/16) |
+| Implementation commit | [`3540b79`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/3540b79) |
+| Documentation commit | [`43e1dbe`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/43e1dbe) |
 
 ## Objective
 
@@ -129,9 +131,11 @@ Checkpoint 09 made conventional software quality enforceable. Unit tests can pro
 - `python -m pipenv run ruff format --check .`: all Python files are formatted.
 - `python -m pipenv run mypy`: no issues in 16 production modules.
 - Offline test suite: 166 passed. The sandbox run used a repository-local pytest temporary directory because Windows denied access to its shared temp parent; this was an environment constraint, not a test failure.
-- Branch coverage: 90.87% total against the enforced 80% minimum.
+- Branch coverage: 90.90% total against the enforced 80% minimum.
 - All 16 application and evaluation modules compile successfully with Python 3.12.
-- GitHub CI and branch-protection evidence will be recorded before review completes.
+- [CI run `31871309089`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/31871309089) passed the independent `quality`, `test`, and `evaluation` jobs on the draft pull request; evaluation replay completed in 15 seconds without credentials.
+- [CodeQL run `31871309092`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/31871309092) passed Python analysis, and the separate CodeQL status context passed.
+- GitHub `main` protection now requires the observed `evaluation` context in addition to `quality`, `test`, `Analyze (python)`, and `CodeQL`; strict up-to-date branches, administrator enforcement, resolved conversations, and the existing force-push/deletion blocks remain unchanged.
 - No live provider run was made during implementation, avoiding unapproved credit usage; the HTTP behavior is verified with fakes.
 
 ## Senior-engineering lessons
