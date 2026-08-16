@@ -94,7 +94,7 @@ def test_groq_request_does_not_require_other_credentials(monkeypatch):
             return {"messages": [AIMessage(content="fake reply")]}
 
     monkeypatch.setattr(ai_agent, "ChatGroq", fake_groq)
-    monkeypatch.setattr(ai_agent, "create_agent", lambda **kwargs: FakeAgent())
+    monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
 
     response = call_agent(make_settings(groq_api_key="groq-test-key"))
 
@@ -117,7 +117,7 @@ def test_openai_request_does_not_require_other_credentials(monkeypatch):
             return {"messages": [AIMessage(content="openai reply")]}
 
     monkeypatch.setattr(ai_agent, "ChatOpenAI", fake_openai)
-    monkeypatch.setattr(ai_agent, "create_agent", lambda **kwargs: FakeAgent())
+    monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
 
     response = call_agent(
         make_settings(openai_api_key="openai-test-key"),
@@ -146,11 +146,15 @@ def test_search_builds_tavily_tool_with_its_own_credential(monkeypatch):
 
     monkeypatch.setattr(ai_agent, "TavilySearch", fake_tavily)
 
-    def fake_create_agent(**kwargs):
-        agent_configuration.update(kwargs)
+    def fake_build_agent_graph(model, tools, system_prompt):
+        agent_configuration.update(
+            model=model,
+            tools=tools,
+            system_prompt=system_prompt,
+        )
         return FakeAgent()
 
-    monkeypatch.setattr(ai_agent, "create_agent", fake_create_agent)
+    monkeypatch.setattr(ai_agent, "_build_agent_graph", fake_build_agent_graph)
 
     response = call_agent(
         make_settings(groq_api_key="groq-test-key", tavily_api_key="tavily-test-key"),
@@ -170,10 +174,8 @@ def test_search_builds_tavily_tool_with_its_own_credential(monkeypatch):
     assert (
         captured["api_wrapper"].tavily_api_key.get_secret_value() == "tavily-test-key"
     )
-    limiter = agent_configuration["middleware"][0]
-    assert limiter.tool_name == "tavily_search"
-    assert limiter.run_limit == 3
-    assert limiter.exit_behavior == "error"
+    assert len(agent_configuration["tools"]) == 1
+    assert agent_configuration["system_prompt"] == "Be helpful"
 
 
 def test_real_tavily_tool_constructs_with_explicit_credential():
@@ -199,7 +201,7 @@ def test_agent_converts_canonical_history(monkeypatch):
             captured["messages"] = state["messages"]
             return {"messages": [AIMessage(content="follow-up reply")]}
 
-    monkeypatch.setattr(ai_agent, "create_agent", lambda **kwargs: FakeAgent())
+    monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
 
     response = get_response_from_ai_agent(
         model=make_model(),
@@ -237,7 +239,7 @@ def test_agent_rejects_unusable_ai_response(monkeypatch, content):
         def invoke(self, state):
             return {"messages": [AIMessage(content=content)]}
 
-    monkeypatch.setattr(ai_agent, "create_agent", lambda **kwargs: FakeAgent())
+    monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
 
     with pytest.raises(InvalidAgentResponseError):
         call_agent(make_settings(groq_api_key="groq-test-key"))
@@ -293,7 +295,7 @@ def test_agent_extracts_and_normalizes_search_provenance(monkeypatch):
                 ]
             }
 
-    monkeypatch.setattr(ai_agent, "create_agent", lambda **kwargs: FakeAgent())
+    monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
 
     outcome = call_agent(
         make_settings(groq_api_key="groq", tavily_api_key="tavily"),
@@ -412,7 +414,7 @@ def test_agent_records_failed_search_without_leaking_provider_error(
                 ]
             }
 
-    monkeypatch.setattr(ai_agent, "create_agent", lambda **kwargs: FakeAgent())
+    monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
     outcome = call_agent(
         make_settings(groq_api_key="groq", tavily_api_key="tavily"),
         allow_search=True,
@@ -441,32 +443,9 @@ def test_agent_rejects_unmatched_search_result(monkeypatch):
                 ]
             }
 
-    monkeypatch.setattr(ai_agent, "create_agent", lambda **kwargs: FakeAgent())
+    monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
 
     with pytest.raises(InvalidAgentResponseError, match="unmatched"):
-        call_agent(
-            make_settings(groq_api_key="groq", tavily_api_key="tavily"),
-            allow_search=True,
-        )
-
-
-def test_agent_normalizes_tool_call_limit(monkeypatch):
-    monkeypatch.setattr(ai_agent, "ChatGroq", lambda **kwargs: object())
-    monkeypatch.setattr(ai_agent, "TavilySearch", lambda **kwargs: object())
-
-    class FakeAgent:
-        def invoke(self, state):
-            raise ai_agent.ToolCallLimitExceededError(
-                thread_count=0,
-                run_count=4,
-                thread_limit=None,
-                run_limit=3,
-                tool_name="tavily_search",
-            )
-
-    monkeypatch.setattr(ai_agent, "create_agent", lambda **kwargs: FakeAgent())
-
-    with pytest.raises(ai_agent.AgentToolLimitExceededError, match="three"):
         call_agent(
             make_settings(groq_api_key="groq", tavily_api_key="tavily"),
             allow_search=True,

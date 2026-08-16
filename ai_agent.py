@@ -1,23 +1,27 @@
 import json
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, cast
+from typing import Annotated, Any, Literal, Protocol, TypedDict, cast
 
-from langchain.agents import create_agent
-from langchain.agents.middleware import ToolCallLimitMiddleware
-from langchain.agents.middleware.tool_call_limit import ToolCallLimitExceededError
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
+    AnyMessage,
     BaseMessage,
     HumanMessage,
+    SystemMessage,
     ToolMessage,
 )
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch
 from langchain_tavily._utilities import TavilySearchAPIWrapper
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -40,6 +44,8 @@ from api_contract import (
 from config import Settings, get_settings
 from model_registry import ModelSpec, Provider
 
+MAX_SEARCH_CALLS = 3
+
 
 class MissingConfigurationError(RuntimeError):
     """Raised when a requested feature is missing required configuration."""
@@ -53,14 +59,20 @@ class AgentToolLimitExceededError(RuntimeError):
     """Raised when one agent request exceeds its bounded tool-call allowance."""
 
 
-class AgentRunner(Protocol):
-    """The small LangGraph surface owned by this application."""
+class AgentGraphState(TypedDict):
+    """Request-scoped workflow state with reducer-owned message accumulation."""
 
-    def invoke(self, state: dict[str, Any]) -> dict[str, Any]: ...
+    messages: Annotated[list[AnyMessage], add_messages]
+
+
+class AgentRunner(Protocol):
+    """The small compiled-graph surface owned by this application."""
+
+    def invoke(self, state: AgentGraphState) -> dict[str, Any]: ...
 
     def stream(
         self,
-        state: dict[str, Any],
+        state: AgentGraphState,
         *,
         stream_mode: list[str],
         version: str,
@@ -103,7 +115,7 @@ class PreparedAgentRun:
     """An eagerly validated agent and its canonical input state."""
 
     agent: AgentRunner
-    state: dict[str, Any]
+    state: AgentGraphState
     allow_search: bool
 
 
@@ -117,8 +129,8 @@ def _require_secret(secret: SecretStr | None, variable_name: str) -> SecretStr:
     return secret
 
 
-def _convert_messages_to_langchain(messages: list[ChatMessage]) -> list[BaseMessage]:
-    langchain_messages: list[BaseMessage] = []
+def _convert_messages_to_langchain(messages: list[ChatMessage]) -> list[AnyMessage]:
+    langchain_messages: list[AnyMessage] = []
     for message in messages:
         if message.role == "user":
             langchain_messages.append(HumanMessage(content=message.content))
@@ -142,12 +154,7 @@ def get_response_from_ai_agent(
         system_prompt,
         settings,
     )
-    try:
-        response = prepared.agent.invoke(prepared.state)
-    except ToolCallLimitExceededError as exc:
-        raise AgentToolLimitExceededError(
-            "The agent exceeded the maximum of three web searches for one request."
-        ) from exc
+    response = prepared.agent.invoke(prepared.state)
 
     return _outcome_from_messages(response.get("messages", []), allow_search)
 
@@ -190,7 +197,7 @@ def prepare_agent_run(
             max_completion_tokens=model.max_output_tokens,
         )
 
-    tools = (
+    tools: list[BaseTool] = (
         [
             TavilySearch(
                 max_results=2,
@@ -210,33 +217,116 @@ def prepare_agent_run(
         if tavily_api_key is not None
         else []
     )
-    middleware = (
-        [
-            ToolCallLimitMiddleware(
-                tool_name="tavily_search",
-                run_limit=3,
-                exit_behavior="error",
-            )
-        ]
-        if tools
-        else []
-    )
-
-    agent = cast(
-        AgentRunner,
-        create_agent(
-            model=llm,
-            tools=tools,
-            system_prompt=system_prompt,
-            middleware=middleware,
-        ),
-    )
+    agent = _build_agent_graph(llm, tools, system_prompt)
 
     return PreparedAgentRun(
         agent=agent,
         state={"messages": _convert_messages_to_langchain(messages)},
         allow_search=allow_search,
     )
+
+
+def _build_agent_graph(
+    model: BaseChatModel,
+    tools: Sequence[BaseTool],
+    system_prompt: str,
+) -> AgentRunner:
+    """Compile the application-owned model/tool workflow for one request."""
+
+    allowed_tools = {tool.name for tool in tools}
+    model_runner = cast(
+        Runnable[Any, BaseMessage],
+        model.bind_tools(list(tools)) if tools else model,
+    )
+
+    def call_model(state: AgentGraphState) -> dict[str, list[AnyMessage]]:
+        response = model_runner.invoke(
+            [SystemMessage(content=system_prompt), *state["messages"]]
+        )
+        if not isinstance(response, AIMessage):
+            raise InvalidAgentResponseError(
+                "The model provider did not return an assistant message."
+            )
+        return {"messages": [response]}
+
+    def route_after_model(
+        state: AgentGraphState,
+    ) -> Literal["validate_tool_calls", "__end__"]:
+        latest = _latest_ai_message(state)
+        if not latest.tool_calls:
+            return "__end__"
+        if not allowed_tools:
+            raise InvalidAgentResponseError(
+                "The model requested a tool when tools were not enabled."
+            )
+        return "validate_tool_calls"
+
+    def validate_tool_calls(state: AgentGraphState) -> dict[str, list[AnyMessage]]:
+        calls = [
+            tool_call
+            for message in state["messages"]
+            if isinstance(message, AIMessage)
+            for tool_call in message.tool_calls
+        ]
+        if len(calls) > MAX_SEARCH_CALLS:
+            raise AgentToolLimitExceededError(
+                "The agent exceeded the maximum of three web searches for one request."
+            )
+
+        seen_ids: set[str] = set()
+        for tool_call in calls:
+            tool_name = tool_call.get("name")
+            if tool_name not in allowed_tools:
+                raise InvalidAgentResponseError(
+                    "The model requested an unsupported tool."
+                )
+            tool_call_id = tool_call.get("id")
+            if (
+                not isinstance(tool_call_id, str)
+                or not tool_call_id.strip()
+                or tool_call_id in seen_ids
+            ):
+                raise InvalidAgentResponseError(
+                    "The model returned inconsistent tool-call identifiers."
+                )
+            seen_ids.add(tool_call_id)
+            try:
+                SearchInput.model_validate(tool_call.get("args"))
+            except ValidationError as exc:
+                raise InvalidAgentResponseError(
+                    "The model returned invalid web-search arguments."
+                ) from exc
+        return {}
+
+    builder = StateGraph(AgentGraphState)
+    builder.add_node("model", call_model)
+    builder.add_node("validate_tool_calls", validate_tool_calls)
+    builder.add_edge(START, "model")
+    builder.add_conditional_edges(
+        "model",
+        route_after_model,
+        {"validate_tool_calls": "validate_tool_calls", END: END},
+    )
+
+    if tools:
+        builder.add_node(
+            "tools",
+            ToolNode(list(tools), handle_tool_errors="Search execution failed."),
+        )
+        builder.add_edge("validate_tool_calls", "tools")
+        builder.add_edge("tools", "model")
+    else:
+        builder.add_edge("validate_tool_calls", END)
+
+    return cast(AgentRunner, builder.compile())
+
+
+def _latest_ai_message(state: AgentGraphState) -> AIMessage:
+    if not state["messages"] or not isinstance(state["messages"][-1], AIMessage):
+        raise InvalidAgentResponseError(
+            "The workflow did not end its model node with an assistant message."
+        )
+    return state["messages"][-1]
 
 
 def stream_prepared_agent(
@@ -296,10 +386,6 @@ def stream_prepared_agent(
                     for text in buffered_text:
                         yield AgentStreamEvent("delta", text)
                     buffered_text.clear()
-    except ToolCallLimitExceededError as exc:
-        raise AgentToolLimitExceededError(
-            "The agent exceeded the maximum of three web searches for one request."
-        ) from exc
     finally:
         close_stream = getattr(raw_stream, "close", None)
         if callable(close_stream):
