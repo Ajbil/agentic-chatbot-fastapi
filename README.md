@@ -6,7 +6,7 @@
 [![Coverage gate: 80%](https://img.shields.io/badge/branch_coverage-%E2%89%A580%25-success)](CONTRIBUTING.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A typed and tested AI-agent application built with a Streamlit frontend, FastAPI backend, and LangChain/LangGraph orchestration. It supports bounded optional Tavily search, auditable source provenance, deterministic context budgeting, and versioned NDJSON answer streaming across Groq and OpenAI models.
+A typed and tested AI-agent application built with a Streamlit frontend, FastAPI backend, and an application-owned LangGraph workflow. It supports bounded optional Tavily search, auditable source provenance, deterministic context budgeting, and versioned NDJSON answer streaming across Groq and OpenAI models.
 
 ## Engineering highlights
 
@@ -15,6 +15,7 @@ A typed and tested AI-agent application built with a Streamlit frontend, FastAPI
 - Bounded search normalizes untrusted provider output into application-owned provenance.
 - Versioned NDJSON events enforce ordering, one terminal outcome, and atomic history commits.
 - Versioned AI evaluations distinguish deterministic contract gates from advisory answer-quality signals.
+- An explicit typed StateGraph makes model/tool routing, validation, and termination reviewable application code.
 - Offline tests use fake providers; local and CI gates require lint, formatting, static types, branch coverage, deterministic evaluation replay, compilation, and CodeQL analysis.
 - The [engineering learning journal](docs/learning/README.md) preserves decisions, alternatives, evidence, and transferable lessons for every checkpoint.
 
@@ -27,11 +28,12 @@ flowchart LR
     UI -->|"POST /chat/stream"| API
     API --> C["Typed API contract"]
     C --> B["Context-budget planner"]
-    B --> A["LangChain / LangGraph agent"]
-    A --> M["Groq or OpenAI"]
-    A -->|"optional, max 3 calls"| T["Tavily search"]
+    B --> M["LangGraph model node"]
+    M -->|"final answer"| S["Versioned NDJSON events"]
+    M -->|"tool calls"| V["Application validation"]
+    V -->|"valid, max 3 total"| T["LangGraph ToolNode / Tavily"]
+    T --> M
     T --> P["Normalized source provenance"]
-    M --> S["Versioned NDJSON events"]
     P --> S
     S --> UI
 ```
@@ -42,7 +44,7 @@ flowchart LR
 - Streamlit for the user interface
 - FastAPI and Uvicorn for the API
 - Pydantic for request validation
-- LangChain/LangGraph for agent orchestration
+- LangGraph `StateGraph` and LangChain message/tool contracts for explicit orchestration
 - Groq and OpenAI as model providers
 - Tavily for optional web search
 - Pipenv for dependency and environment management
@@ -246,6 +248,20 @@ One request may perform at most three basic Tavily searches with at most two sou
 
 The UI renders retrieved sources separately from the assistant's Markdown. Source titles and snippets are untrusted web data. A retrieved source is provenance, not a claim-level citation: this checkpoint proves what the search tool returned, but does not yet prove that every sentence in the answer is supported by a source.
 
+## Application-owned workflow
+
+Each request compiles and invokes a typed, request-scoped LangGraph workflow:
+
+```text
+START -> model -> END
+           |
+           +-> validate_tool_calls -> tools -> model
+```
+
+The model decides whether search is useful, but the application owns every executable transition. Before any external call, `validate_tool_calls` rejects unsupported tools, invalid search arguments, missing or duplicate call identifiers, and any request that would exceed three searches in total. A parallel batch of four searches is rejected atomically, so no part of an invalid batch reaches Tavily. Tool failures are converted to safe failed-search evidence without exposing provider diagnostics.
+
+Workflow state uses LangGraph's message reducer and exists only for one API request. The trusted system prompt is injected at the model boundary rather than appended to returned conversation history. There is intentionally no checkpointer yet: browser-session history remains the product's current persistence boundary, while durable conversations and resumable execution require identity, storage, retention, and authorization decisions of their own.
+
 ## Quality gates
 
 Install the locked development environment, then run the same checks required by pull requests:
@@ -261,7 +277,7 @@ python -m pipenv run python -m evaluations replay --check-baseline
 python -m pipenv run python -m pytest --cov=. --cov-report=term-missing --cov-fail-under=80
 ```
 
-The 166 tests use fake providers and do not make Groq, OpenAI, or Tavily requests. Coverage uses branch measurement, and CI rejects a total below 80%. The separate `evaluation` job validates and replays the committed AI-behavior baseline without credentials. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow and formatting command.
+The 177 tests use fake providers and do not make Groq, OpenAI, or Tavily requests. Coverage uses branch measurement, and CI rejects a total below 80%. The separate `evaluation` job validates and replays the committed AI-behavior baseline without credentials. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow and formatting command.
 
 ## AI evaluation baseline
 
@@ -293,14 +309,15 @@ Live runs are sequential, make no automatic retries, continue after individual f
 - Inspect whether web search ran and which sources it retrieved for each answer.
 - Watch typed model and search progress while the final answer streams.
 - Replay a versioned, deterministic AI-behavior baseline and run opt-in live evaluations through the public API.
+- Inspect an explicit typed model/validation/tool graph whose safety limits run before external execution.
 
 ## Current limitations
 
-This is a portfolio-ready engineering project, not a deployed production service. The evaluation baseline detects contract and search-policy regressions but does not prove factual correctness or real-world model quality. Conversation history remains temporary and browser-session-owned; the project does not yet provide authentication, authorization, persistent storage, deployment infrastructure, rate limiting, production telemetry, service-level objectives, resumable streams, strong cross-provider cancellation, claim-level citation validation, exact provider token accounting, or an explicit custom LangGraph workflow.
+This is a portfolio-ready engineering project, not a deployed production service. The evaluation baseline detects contract and search-policy regressions but does not prove factual correctness or real-world model quality. Conversation history remains temporary and browser-session-owned; the project does not yet provide authentication, authorization, persistent storage, deployment infrastructure, rate limiting, production telemetry, service-level objectives, resumable streams, strong cross-provider cancellation, claim-level citation validation, or exact provider token accounting.
 
 ## Learning roadmap
 
-Checkpoint 10 establishes the deterministic AI-evaluation baseline. Later checkpoints can add claim-level grounding, an explicit LangGraph workflow, observability, persistence and identity, deployment hardening, and load/resilience testing. These are deliberately separated so this repository does not claim production readiness before it has production evidence.
+Checkpoint 11 replaces framework-generated agent control flow with an explicit application-owned LangGraph workflow. Later checkpoints can add claim-level grounding, observability, persistence and identity, deployment hardening, and load/resilience testing. These are deliberately separated so this repository does not claim production readiness before it has production evidence.
 
 ## Learning journal
 
