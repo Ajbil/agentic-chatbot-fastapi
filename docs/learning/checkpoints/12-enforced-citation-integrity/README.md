@@ -2,10 +2,14 @@
 
 | Field | Value |
 |---|---|
-| Status | In progress |
+| Status | In review |
 | Date | 2026-08-16 |
 | Branch | `codex/grounded-citation-contract` |
-| Pull request | Pending |
+| Pull request | [#18 - Enforce citation integrity for grounded answers](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/18) |
+| Implementation commit | [`01a7431`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/01a7431) |
+| Test commit | [`270f676`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/270f676) |
+| Evaluation commit | [`b270036`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/b270036) |
+| Documentation commit | [`9c22f18`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/9c22f18) |
 
 ## Objective
 
@@ -120,7 +124,16 @@ Evaluation v2 adds minimum cited-source expectations and a hard grounding-consis
 - Evaluation replay checks all required-search cases meet the citation rule.
 - Dependency, lint, format, type, test, branch-coverage, compilation, and replay gates run before publication.
 
-Exact final results and commit links will be recorded after publication.
+Final local evidence before publication:
+
+- Dependency lock verification: passed.
+- Ruff lint and format checks: passed.
+- mypy: passed for 16 source modules.
+- Evaluation v2 validation: 15 valid cases.
+- Deterministic replay: 15/15 hard-pass cases and 4/4 citation-required cases.
+- pytest: 183 passed.
+- Branch-aware coverage: 91.30% against an 80% gate.
+- Python compilation: passed.
 
 ## What this checkpoint does not prove
 
