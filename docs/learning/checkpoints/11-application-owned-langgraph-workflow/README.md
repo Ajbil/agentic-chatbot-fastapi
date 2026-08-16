@@ -2,13 +2,13 @@
 
 | Field | Value |
 |---|---|
-| Status | In progress |
+| Status | In review |
 | Date | 2026-08-16 |
 | Branch | `codex/explicit-langgraph-workflow` |
-| Pull request | Pending |
+| Pull request | [#17 - Add application-owned LangGraph workflow](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/17) |
 | Implementation commit | [`a9d9d67`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/a9d9d67) |
 | Test commit | [`ebb7dac`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/ebb7dac) |
-| Documentation commit | Pending |
+| Documentation commit | [`a80e4c9`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/a80e4c9) |
 
 ## Objective
 
@@ -125,7 +125,8 @@ Checkpoint 10 established a deterministic behavioral baseline before the orchest
 - Dataset validation: version `v1` remains valid with 15 cases.
 - Deterministic replay remains byte-for-byte unchanged: 15/15 hard passes and 45/45 advisory passes.
 - Branch coverage: 91.51% total against the enforced 80% minimum.
-- Pull-request CI evidence will be recorded before review.
+- [CI run `31933415969`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/31933415969) passed the `quality`, `test`, and credential-free `evaluation` jobs on draft PR #17.
+- [CodeQL run `31933415984`](https://github.com/Ajbil/agentic-chatbot-fastapi/actions/runs/31933415984) passed `Analyze (python)`, and the separate required `CodeQL` context also passed.
 - No live provider calls were made; this checkpoint changes orchestration control flow, not the approved cost boundary.
 
 ## Senior-engineering lessons
