@@ -54,6 +54,7 @@ class EvaluationExpectations(BaseModel):
     search_policy: SearchPolicy
     min_successful_searches: int = Field(default=0, ge=0, le=3)
     min_unique_sources: int = Field(default=0, ge=0, le=6)
+    min_cited_sources: int = Field(default=0, ge=0, le=6)
     required_concepts: tuple[tuple[str, ...], ...] = ()
     forbidden_phrases: tuple[str, ...] = ()
     min_reply_characters: int = Field(default=20, ge=1, le=20_000)
@@ -108,10 +109,13 @@ class EvaluationCase(BaseModel):
         if policy != "required" and (
             self.expectations.min_successful_searches > 0
             or self.expectations.min_unique_sources > 0
+            or self.expectations.min_cited_sources > 0
         ):
             raise ValueError(
-                "Only required-search cases may require searches or sources."
+                "Only required-search cases may require searches, sources, or citations."
             )
+        if policy == "required" and self.expectations.min_cited_sources < 1:
+            raise ValueError("Required-search cases need at least one cited source.")
         return self
 
 
@@ -120,7 +124,7 @@ class EvaluationDataset(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     dataset_version: str = Field(pattern=r"^v[1-9][0-9]*$")
     cases: tuple[EvaluationCase, ...] = Field(min_length=1)
 
@@ -186,6 +190,9 @@ class EvaluationSummary(BaseModel):
     provenance_required_cases: int
     provenance_satisfied: int
     provenance_success_rate: float
+    citation_required_cases: int
+    citation_satisfied: int
+    citation_success_rate: float
     execution_failures: int
 
 
@@ -201,7 +208,7 @@ class EvaluationTarget(BaseModel):
 class EvaluationReport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     dataset_version: str
     target: EvaluationTarget
     summary: EvaluationSummary

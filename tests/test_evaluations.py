@@ -38,9 +38,9 @@ def candidates() -> tuple[CandidateRecord, ...]:
     return load_candidates(DEFAULT_REPLAY_PATH)
 
 
-def test_v1_dataset_has_expected_categories_and_unique_cases(dataset):
-    assert dataset.schema_version == 1
-    assert dataset.dataset_version == "v1"
+def test_v2_dataset_has_expected_categories_and_unique_cases(dataset):
+    assert dataset.schema_version == 2
+    assert dataset.dataset_version == "v2"
     assert len(dataset.cases) == 15
     assert len({case.id for case in dataset.cases}) == 15
     assert {case.category for case in dataset.cases} == {
@@ -57,7 +57,7 @@ def test_v1_dataset_has_expected_categories_and_unique_cases(dataset):
 def test_dataset_rejects_duplicate_case_ids(dataset):
     with pytest.raises(ValidationError, match="unique"):
         EvaluationDataset(
-            schema_version=1,
+            schema_version=2,
             dataset_version="v1",
             cases=(dataset.cases[0], dataset.cases[0]),
         )
@@ -65,7 +65,7 @@ def test_dataset_rejects_duplicate_case_ids(dataset):
 
 def test_dataset_rejects_unknown_schema_version(dataset):
     payload = dataset.model_dump(mode="json")
-    payload["schema_version"] = 2
+    payload["schema_version"] = 3
     with pytest.raises(ValidationError):
         EvaluationDataset.model_validate(payload)
 
@@ -310,6 +310,9 @@ def test_report_serialization_and_committed_baseline_are_deterministic(
     assert report_markdown(report) == DEFAULT_MARKDOWN_REPORT_PATH.read_text(
         encoding="utf-8"
     )
+    assert report.summary.citation_required_cases == 4
+    assert report.summary.citation_satisfied == 4
+    assert report.summary.citation_success_rate == 1.0
     write_report(report, tmp_path)
     assert (tmp_path / "report.json").read_text(encoding="utf-8") == report_json(report)
 

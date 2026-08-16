@@ -9,10 +9,10 @@ from evaluations.models import (
 )
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
-DEFAULT_DATASET_PATH = PACKAGE_ROOT / "datasets" / "v1.json"
-DEFAULT_REPLAY_PATH = PACKAGE_ROOT / "baselines" / "v1-responses.jsonl"
-DEFAULT_JSON_REPORT_PATH = PACKAGE_ROOT / "baselines" / "v1-report.json"
-DEFAULT_MARKDOWN_REPORT_PATH = PACKAGE_ROOT / "baselines" / "v1-report.md"
+DEFAULT_DATASET_PATH = PACKAGE_ROOT / "datasets" / "v2.json"
+DEFAULT_REPLAY_PATH = PACKAGE_ROOT / "baselines" / "v2-responses.jsonl"
+DEFAULT_JSON_REPORT_PATH = PACKAGE_ROOT / "baselines" / "v2-report.json"
+DEFAULT_MARKDOWN_REPORT_PATH = PACKAGE_ROOT / "baselines" / "v2-report.md"
 
 
 def load_dataset(path: Path = DEFAULT_DATASET_PATH) -> EvaluationDataset:
@@ -67,6 +67,9 @@ def report_markdown(report: EvaluationReport) -> str:
         f"- Provenance success rate: "
         f"{summary.provenance_satisfied}/{summary.provenance_required_cases} "
         f"({summary.provenance_success_rate:.2%})",
+        f"- Citation integrity success rate: "
+        f"{summary.citation_satisfied}/{summary.citation_required_cases} "
+        f"({summary.citation_success_rate:.2%})",
         f"- Execution failures: {summary.execution_failures}",
         "",
         "## Case results",
@@ -89,8 +92,9 @@ def report_markdown(report: EvaluationReport) -> str:
             "## Interpretation",
             "",
             "Hard checks are deterministic repository invariants. Advisory checks use "
-            "lexical proxies and do not prove factual correctness, helpfulness, or "
-            "claim-level grounding.",
+            "lexical proxies and do not prove factual correctness or helpfulness. "
+            "Citation checks prove that references map to retrieved sources; they do "
+            "not prove that each source semantically entails each claim.",
             "",
         )
     )
