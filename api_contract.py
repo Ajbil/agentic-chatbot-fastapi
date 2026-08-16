@@ -1,3 +1,4 @@
+import re
 from typing import Annotated, Literal, Self
 
 from pydantic import (
@@ -18,6 +19,9 @@ MAX_SEARCH_EXECUTIONS = 3
 MAX_SEARCH_QUERY_CHARACTERS = 500
 MAX_SOURCE_TITLE_CHARACTERS = 300
 MAX_SOURCE_SNIPPET_CHARACTERS = 1_000
+MAX_UNIQUE_SEARCH_SOURCES = 6
+SOURCE_ID_PATTERN = r"^S[1-6]$"
+CITATION_MARKER_PATTERN = re.compile(r"\[(S[0-9]+)\]")
 
 
 class ChatMessage(BaseModel):
@@ -117,6 +121,7 @@ class SearchSource(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    source_id: str = Field(pattern=SOURCE_ID_PATTERN)
     title: str = Field(min_length=1, max_length=MAX_SOURCE_TITLE_CHARACTERS)
     url: AnyHttpUrl
     snippet: str | None = Field(
@@ -176,7 +181,42 @@ class SearchEvidence(BaseModel):
             raise ValueError("Search attempted must match whether executions exist.")
         if not self.allowed and self.attempted:
             raise ValueError("Search cannot be attempted when it was not allowed.")
+
+        urls_by_id: dict[str, str] = {}
+        ids_by_url: dict[str, str] = {}
+        for execution in self.executions:
+            for source in execution.sources:
+                normalized_url = str(source.url)
+                previous_url = urls_by_id.setdefault(source.source_id, normalized_url)
+                previous_id = ids_by_url.setdefault(normalized_url, source.source_id)
+                if previous_url != normalized_url or previous_id != source.source_id:
+                    raise ValueError(
+                        "Search source identifiers must map one-to-one with URLs."
+                    )
         return self
+
+
+class GroundingEvidence(BaseModel):
+    """Deterministic citation-reference evidence for one assistant answer."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: Literal["not_applicable", "unavailable", "cited"]
+    cited_source_ids: tuple[str, ...] = Field(
+        default=(),
+        max_length=MAX_UNIQUE_SEARCH_SOURCES,
+    )
+    repair_attempted: bool = False
+
+    @field_validator("cited_source_ids")
+    @classmethod
+    def require_valid_unique_source_ids(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(value) != len(set(value)):
+            raise ValueError("Cited source identifiers must be unique.")
+        for source_id in value:
+            if re.fullmatch(SOURCE_ID_PATTERN, source_id) is None:
+                raise ValueError("A cited source identifier is invalid.")
+        return value
 
 
 class ChatResponse(BaseModel):
@@ -188,6 +228,42 @@ class ChatResponse(BaseModel):
     reply: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARACTERS)
     context: ContextUsage
     search: SearchEvidence
+    grounding: GroundingEvidence
+
+    @model_validator(mode="after")
+    def require_consistent_grounding_evidence(self) -> Self:
+        available_source_ids = {
+            source.source_id
+            for execution in self.search.executions
+            if execution.status == "succeeded"
+            for source in execution.sources
+        }
+        markers = CITATION_MARKER_PATTERN.findall(self.reply)
+        cited_in_order = tuple(dict.fromkeys(markers))
+
+        if self.grounding.cited_source_ids != cited_in_order:
+            raise ValueError(
+                "Grounding evidence must match inline citation markers in order."
+            )
+        if not set(cited_in_order).issubset(available_source_ids):
+            raise ValueError("The answer cites a source that was not retrieved.")
+
+        expected_status: Literal["not_applicable", "unavailable", "cited"]
+        if available_source_ids:
+            expected_status = "cited"
+        elif self.search.attempted:
+            expected_status = "unavailable"
+        else:
+            expected_status = "not_applicable"
+        if self.grounding.status != expected_status:
+            raise ValueError("Grounding status does not match the search evidence.")
+        if expected_status == "cited" and not cited_in_order:
+            raise ValueError(
+                "An answer based on retrieved evidence must cite a source."
+            )
+        if expected_status != "cited" and cited_in_order:
+            raise ValueError("An answer cannot cite unavailable search evidence.")
+        return self
 
 
 class ValidationIssue(BaseModel):
