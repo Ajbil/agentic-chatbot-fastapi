@@ -52,6 +52,11 @@ def test_frontend_sends_and_validates_canonical_contract(monkeypatch):
                 "reply": "Typed reply",
                 "context": context_payload(),
                 "search": {"allowed": False, "attempted": False, "executions": []},
+                "grounding": {
+                    "status": "not_applicable",
+                    "cited_source_ids": [],
+                    "repair_attempted": False,
+                },
             },
         )
 
