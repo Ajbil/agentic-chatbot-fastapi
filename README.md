@@ -12,7 +12,8 @@ A typed and tested AI-agent application built with a Streamlit frontend, FastAPI
 
 - Backend-owned, typed model and API contracts prevent frontend/provider coupling.
 - Deterministic recent-window context selection exposes what was omitted and why.
-- Bounded search normalizes untrusted provider output into application-owned provenance.
+- Bounded search normalizes untrusted provider output into stable, request-scoped source IDs.
+- Grounded answers must cite retrieved IDs inline; one bounded repair is allowed before safe failure.
 - Versioned NDJSON events enforce ordering, one terminal outcome, and atomic history commits.
 - Versioned AI evaluations distinguish deterministic contract gates from advisory answer-quality signals.
 - An explicit typed StateGraph makes model/tool routing, validation, and termination reviewable application code.
@@ -29,12 +30,14 @@ flowchart LR
     API --> C["Typed API contract"]
     C --> B["Context-budget planner"]
     B --> M["LangGraph model node"]
-    M -->|"final answer"| S["Versioned NDJSON events"]
+    M -->|"final answer"| G["Citation validator"]
     M -->|"tool calls"| V["Application validation"]
     V -->|"valid, max 3 total"| T["LangGraph ToolNode / Tavily"]
-    T --> M
-    T --> P["Normalized source provenance"]
-    P --> S
+    T --> P["Normalize and assign S1-S6"]
+    P --> M
+    G -->|"valid"| S["Versioned NDJSON events"]
+    G -->|"invalid, once"| M
+    P --> G
     S --> UI
 ```
 
@@ -143,7 +146,7 @@ A successful request returns HTTP `200` with a typed response:
 ```json
 {
   "model_key": "groq-gpt-oss-20b",
-  "reply": "The latest Python release is...",
+  "reply": "The latest Python release is... [S1]",
   "context": {
     "estimation_method": "langchain_approximate_v1",
     "context_window_tokens": 131072,
@@ -166,6 +169,7 @@ A successful request returns HTTP `200` with a typed response:
         "status": "succeeded",
         "sources": [
           {
+            "source_id": "S1",
             "title": "Python downloads",
             "url": "https://www.python.org/downloads/",
             "snippet": "Download the latest Python release..."
@@ -173,6 +177,11 @@ A successful request returns HTTP `200` with a typed response:
         ]
       }
     ]
+  },
+  "grounding": {
+    "status": "cited",
+    "cited_source_ids": ["S1"],
+    "repair_attempted": false
   }
 }
 ```
@@ -221,7 +230,8 @@ Streamlit keeps one temporary conversation in each browser session and resends t
 - After each successful turn, the UI displays the estimated model-input usage and warns when older messages were omitted.
 - Search evidence remains attached to the assistant turn that produced it.
 - When search is allowed, the UI distinguishes unused search, successful retrieval, and failed retrieval.
-- Assistant text and safe operational stages appear progressively while the request runs.
+- Answers without successful search evidence continue to stream progressively.
+- Search-grounded drafts are buffered until citation validation succeeds, so an invalid draft is never displayed as trusted output.
 - Partial output from a failed stream is labeled incomplete and is never committed to model history.
 
 This history is intentionally session-scoped. It is not stored in a database, shared between browser sessions, or guaranteed to survive a Streamlit restart.
@@ -244,23 +254,31 @@ The policy does not yet summarize removed history or identify important facts. S
 
 Enabling web search grants permission; it does not guarantee that the agent will use it. Every successful response therefore reports whether search was allowed, whether it was attempted, which bounded queries ran, whether each execution succeeded, and which normalized sources were retrieved.
 
-One request may perform at most three basic Tavily searches with at most two sources per execution. The application exposes only a validated title, HTTP(S) URL, and bounded snippet. Raw page content, relevance scores, provider exceptions, tool-call identifiers, and other provider metadata stay behind the backend trust boundary.
+One request may perform at most three basic Tavily searches with at most two sources per execution. The application exposes only a stable request-scoped ID (`S1` through `S6`), validated title, HTTP(S) URL, and bounded snippet. Repeated URLs reuse the same ID. Raw page content, relevance scores, provider exceptions, tool-call identifiers, and other provider metadata stay behind the backend trust boundary.
 
-The UI renders retrieved sources separately from the assistant's Markdown. Source titles and snippets are untrusted web data. A retrieved source is provenance, not a claim-level citation: this checkpoint proves what the search tool returned, but does not yet prove that every sentence in the answer is supported by a source.
+When usable sources exist, the final answer must contain at least one exact inline marker such as `[S1]`, and every marker must identify a source returned for that request. The backend validates this mechanically. It asks the model to rewrite an invalid draft once without calling another tool, then fails safely if the repair is still invalid. The response records whether grounding was cited, unavailable, or not applicable and whether repair occurred.
+
+The UI maps each inline ID to a separately rendered source link. This proves reference integrity—an ID in the answer maps to retrieved evidence—but it does **not** prove semantic entailment. Human review or a separately evaluated claim-verification system is still required to determine whether a cited source truly supports each claim.
 
 ## Application-owned workflow
 
 Each request compiles and invokes a typed, request-scoped LangGraph workflow:
 
 ```text
-START -> model -> END
+START -> model -> END (no retrieved evidence)
            |
-           +-> validate_tool_calls -> tools -> model
+           +-> validate_tool_calls -> tools -> normalize_search_results -> model
+                                                                        |
+                                               validate_citations <-----+
+                                                  |             |
+                                             valid END      one repair -> model
 ```
 
 The model decides whether search is useful, but the application owns every executable transition. Before any external call, `validate_tool_calls` rejects unsupported tools, invalid search arguments, missing or duplicate call identifiers, and any request that would exceed three searches in total. A parallel batch of four searches is rejected atomically, so no part of an invalid batch reaches Tavily. Tool failures are converted to safe failed-search evidence without exposing provider diagnostics.
 
-Workflow state uses LangGraph's message reducer and exists only for one API request. The trusted system prompt is injected at the model boundary rather than appended to returned conversation history. There is intentionally no checkpointer yet: browser-session history remains the product's current persistence boundary, while durable conversations and resumable execution require identity, storage, retention, and authorization decisions of their own.
+`normalize_search_results` is the trust boundary between provider-shaped tool output and the application contract. `validate_citations` accepts only source IDs present in normalized state. During the single repair cycle, tool calls are rejected before execution, preventing an unbounded correction loop or surprise search cost.
+
+Workflow state uses LangGraph's message reducer and exists only for one API request. The trusted system and grounding policies are injected at the model boundary rather than appended to returned conversation history. There is intentionally no checkpointer yet: browser-session history remains the product's current persistence boundary, while durable conversations and resumable execution require identity, storage, retention, and authorization decisions of their own.
 
 ## Quality gates
 
@@ -277,11 +295,11 @@ python -m pipenv run python -m evaluations replay --check-baseline
 python -m pipenv run python -m pytest --cov=. --cov-report=term-missing --cov-fail-under=80
 ```
 
-The 177 tests use fake providers and do not make Groq, OpenAI, or Tavily requests. Coverage uses branch measurement, and CI rejects a total below 80%. The separate `evaluation` job validates and replays the committed AI-behavior baseline without credentials. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow and formatting command.
+The 183 tests use fake providers and do not make Groq, OpenAI, or Tavily requests. Coverage uses branch measurement, and CI rejects a total below 80%. The separate `evaluation` job validates and replays the committed AI-behavior baseline without credentials. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow and formatting command.
 
 ## AI evaluation baseline
 
-The versioned [v1 dataset](evaluations/datasets/v1.json) contains 15 cases covering static knowledge, required and optional search, uncertainty, instruction resilience, multi-turn context, and conflicting evidence. Each case defines deterministic hard invariants and optional lexical signals. Hard checks govern execution, model identity, search permission and usage, provenance counts, and forbidden markers. Advisory checks report concepts and response length; they are useful regression clues but do not prove correctness.
+The active versioned [v2 dataset](evaluations/datasets/v2.json) contains 15 cases covering static knowledge, required and optional search, uncertainty, instruction resilience, multi-turn context, and conflicting evidence. Each case defines deterministic hard invariants and optional lexical signals. Hard checks govern execution, model identity, search permission and usage, provenance counts, grounding-contract consistency, minimum citations, and forbidden markers. Advisory checks report concepts and response length; they are useful regression clues but do not prove correctness. The v1 artifacts remain committed as historical evidence instead of being silently overwritten.
 
 Replay mode scores committed typed `ChatResponse` records and compares the resulting JSON report with the reviewed baseline:
 
@@ -306,18 +324,18 @@ Live runs are sequential, make no automatic retries, continue after individual f
 - Optionally allow the agent to search the web using Tavily.
 - Retry failed turns without adding incomplete exchanges to model history.
 - Bound model input with deterministic recent-window selection and visible usage metadata.
-- Inspect whether web search ran and which sources it retrieved for each answer.
+- Inspect which stable source IDs an answer cited and whether citation repair was needed.
 - Watch typed model and search progress while the final answer streams.
 - Replay a versioned, deterministic AI-behavior baseline and run opt-in live evaluations through the public API.
 - Inspect an explicit typed model/validation/tool graph whose safety limits run before external execution.
 
 ## Current limitations
 
-This is a portfolio-ready engineering project, not a deployed production service. The evaluation baseline detects contract and search-policy regressions but does not prove factual correctness or real-world model quality. Conversation history remains temporary and browser-session-owned; the project does not yet provide authentication, authorization, persistent storage, deployment infrastructure, rate limiting, production telemetry, service-level objectives, resumable streams, strong cross-provider cancellation, claim-level citation validation, or exact provider token accounting.
+This is a portfolio-ready engineering project, not a deployed production service. The evaluation baseline detects contract, search-policy, and reference-integrity regressions but does not prove factual correctness, semantic source support, or real-world model quality. Conversation history remains temporary and browser-session-owned; the project does not yet provide authentication, authorization, persistent storage, deployment infrastructure, rate limiting, production telemetry, service-level objectives, resumable streams, strong cross-provider cancellation, semantic claim verification, or exact provider token accounting.
 
 ## Learning roadmap
 
-Checkpoint 11 replaces framework-generated agent control flow with an explicit application-owned LangGraph workflow. Later checkpoints can add claim-level grounding, observability, persistence and identity, deployment hardening, and load/resilience testing. These are deliberately separated so this repository does not claim production readiness before it has production evidence.
+Checkpoint 12 enforces deterministic reference integrity on top of the application-owned graph. Later checkpoints can add observability, persistence and identity, deployment hardening, semantic claim verification, and load/resilience testing. These are deliberately separated so this repository does not claim production readiness before it has production evidence.
 
 ## Learning journal
 
