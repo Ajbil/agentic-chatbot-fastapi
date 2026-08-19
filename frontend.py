@@ -8,6 +8,7 @@ from api_contract import (
     MAX_MESSAGE_CHARACTERS,
     MAX_SYSTEM_PROMPT_CHARACTERS,
     ChatResponse,
+    GroundingEvidence,
     SearchEvidence,
     StreamCompleteEvent,
     StreamDeltaEvent,
@@ -53,10 +54,14 @@ def _render_history(state: ConversationState) -> None:
             st.markdown(turn.user_message.content)
         with st.chat_message("assistant"):
             st.markdown(turn.assistant_message.content)
-            _render_search_evidence(turn.search, turn_index)
+            _render_search_evidence(turn.search, turn.grounding, turn_index)
 
 
-def _render_search_evidence(evidence: SearchEvidence, turn_index: int) -> None:
+def _render_search_evidence(
+    evidence: SearchEvidence,
+    grounding: GroundingEvidence,
+    turn_index: int,
+) -> None:
     if not evidence.allowed:
         return
     if not evidence.attempted:
@@ -72,7 +77,7 @@ def _render_search_evidence(evidence: SearchEvidence, turn_index: int) -> None:
                 st.caption(f"Search {execution_index}: {execution.query}")
                 for source_index, source in enumerate(execution.sources, start=1):
                     st.link_button(
-                        source.title,
+                        f"[{source.source_id}] {source.title}",
                         str(source.url),
                         key=f"source-{turn_index}-{execution_index}-{source_index}",
                     )
@@ -87,6 +92,17 @@ def _render_search_evidence(evidence: SearchEvidence, turn_index: int) -> None:
             )
         else:
             st.warning("Web search was attempted but returned no usable evidence.")
+
+    if grounding.status == "cited":
+        cited = ", ".join(f"[{source_id}]" for source_id in grounding.cited_source_ids)
+        st.caption(
+            f"Validated source references: {cited}. This confirms reference "
+            "integrity, not that each source semantically proves every claim."
+        )
+        if grounding.repair_attempted:
+            st.caption(
+                "The assistant corrected invalid citations once before delivery."
+            )
 
 
 def _render_context_usage(state: ConversationState) -> None:

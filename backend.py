@@ -184,6 +184,7 @@ def chat_endpoint(request: ChatRequest) -> ChatResponse:
         reply=agent_outcome.reply,
         context=context_plan.usage,
         search=agent_outcome.search,
+        grounding=agent_outcome.grounding,
     )
 
 
@@ -305,6 +306,7 @@ def chat_stream_endpoint(request: ChatRequest) -> StreamingResponse:
                         reply=outcome.reply,
                         context=context_plan.usage,
                         search=outcome.search,
+                        grounding=outcome.grounding,
                     )
                     sequence += 1
                     yield _serialize_stream_event(

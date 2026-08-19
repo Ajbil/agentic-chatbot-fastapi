@@ -7,7 +7,7 @@ from ai_agent import (
     InvalidAgentResponseError,
     MissingConfigurationError,
 )
-from api_contract import SearchEvidence
+from api_contract import GroundingEvidence, SearchEvidence
 from model_registry import DEFAULT_MODEL_KEY, ModelSpec, Provider
 
 client = TestClient(backend.app)
@@ -67,6 +67,7 @@ def test_valid_chat_request_returns_typed_response(monkeypatch):
         return AgentOutcome(
             reply="fake reply",
             search=SearchEvidence(allowed=False, attempted=False),
+            grounding=GroundingEvidence(status="not_applicable"),
         )
 
     monkeypatch.setattr(backend, "get_response_from_ai_agent", fake_agent)
@@ -84,6 +85,11 @@ def test_valid_chat_request_returns_typed_response(monkeypatch):
         "allowed": False,
         "attempted": False,
         "executions": [],
+    }
+    assert body["grounding"] == {
+        "status": "not_applicable",
+        "cited_source_ids": [],
+        "repair_attempted": False,
     }
     assert captured["model"].key == "groq-gpt-oss-20b"
     assert captured["messages"][0].role == "user"
@@ -152,6 +158,7 @@ def test_backend_sends_only_the_planned_recent_window(monkeypatch):
         return AgentOutcome(
             reply="recent reply",
             search=SearchEvidence(allowed=False, attempted=False),
+            grounding=GroundingEvidence(status="not_applicable"),
         )
 
     monkeypatch.setattr(backend, "get_response_from_ai_agent", fake_agent)

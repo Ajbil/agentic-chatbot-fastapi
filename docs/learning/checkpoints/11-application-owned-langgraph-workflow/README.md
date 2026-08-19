@@ -2,13 +2,14 @@
 
 | Field | Value |
 |---|---|
-| Status | In review |
+| Status | Complete |
 | Date | 2026-08-16 |
 | Branch | `codex/explicit-langgraph-workflow` |
 | Pull request | [#17 - Add application-owned LangGraph workflow](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/17) |
 | Implementation commit | [`a9d9d67`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/a9d9d67) |
 | Test commit | [`ebb7dac`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/ebb7dac) |
 | Documentation commit | [`a80e4c9`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/a80e4c9) |
+| Merge commit | [`117f1aa`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/117f1aa) |
 
 ## Objective
 

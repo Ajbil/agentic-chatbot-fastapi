@@ -5,6 +5,7 @@ from api_contract import (
     ChatMessage,
     ChatResponse,
     ContextUsage,
+    GroundingEvidence,
     SearchEvidence,
     SearchExecution,
     SearchSource,
@@ -54,30 +55,34 @@ def response(reply="Answer", model_key="groq-gpt-oss-20b", **usage_overrides):
         reply=reply,
         context=ContextUsage(**usage),
         search=SearchEvidence(allowed=False, attempted=False),
+        grounding=GroundingEvidence(status="not_applicable"),
     )
 
 
-def searched_response(reply="Searched answer"):
-    base = response(reply)
-    return base.model_copy(
-        update={
-            "search": SearchEvidence(
-                allowed=True,
-                attempted=True,
-                executions=(
-                    SearchExecution(
-                        query="current information",
-                        status="succeeded",
-                        sources=(
-                            SearchSource(
-                                title="Official source",
-                                url="https://example.com/source",
-                            ),
+def searched_response(reply="Searched answer [S1]"):
+    base = response()
+    return ChatResponse(
+        model_key=base.model_key,
+        reply=reply,
+        context=base.context,
+        search=SearchEvidence(
+            allowed=True,
+            attempted=True,
+            executions=(
+                SearchExecution(
+                    query="current information",
+                    status="succeeded",
+                    sources=(
+                        SearchSource(
+                            source_id="S1",
+                            title="Official source",
+                            url="https://example.com/source",
                         ),
                     ),
                 ),
-            )
-        }
+            ),
+        ),
+        grounding=GroundingEvidence(status="cited", cited_source_ids=("S1",)),
     )
 
 
@@ -230,6 +235,7 @@ def test_last_exchange_is_allowed_at_48_messages_then_limit_is_reached():
                 assistant_message=assistant_message,
                 context=turn_response.context,
                 search=turn_response.search,
+                grounding=turn_response.grounding,
             )
         )
     state = ConversationState(turns=turns, settings=settings())
@@ -303,7 +309,7 @@ def test_search_evidence_remains_attached_to_its_committed_turn():
     assert state.turns[1].search.attempted is False
     assert [message.content for message in state.messages] == [
         "Current question",
-        "Searched answer",
+        "Searched answer [S1]",
         "Follow-up",
         "Second answer",
     ]

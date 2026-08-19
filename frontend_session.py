@@ -7,6 +7,7 @@ from api_contract import (
     ChatRequest,
     ChatResponse,
     ContextUsage,
+    GroundingEvidence,
     SearchEvidence,
 )
 
@@ -51,6 +52,7 @@ class CommittedTurn:
     assistant_message: ChatMessage
     context: ContextUsage
     search: SearchEvidence
+    grounding: GroundingEvidence
 
 
 @dataclass
@@ -136,6 +138,7 @@ class ConversationState:
                 assistant_message=assistant_message,
                 context=response.context,
                 search=response.search,
+                grounding=response.grounding,
             )
         )
         self.failed_turn = None

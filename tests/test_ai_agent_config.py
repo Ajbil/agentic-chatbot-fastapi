@@ -12,7 +12,13 @@ from ai_agent import (
     MissingConfigurationError,
     get_response_from_ai_agent,
 )
-from api_contract import MAX_MESSAGE_CHARACTERS, ChatMessage
+from api_contract import (
+    MAX_MESSAGE_CHARACTERS,
+    ChatMessage,
+    GroundingEvidence,
+    SearchExecution,
+    SearchSource,
+)
 from config import Settings
 from model_registry import ModelSpec, Provider
 
@@ -47,6 +53,15 @@ def call_agent(settings, provider=Provider.GROQ, allow_search=False):
         system_prompt="Be helpful",
         settings=settings,
     )
+
+
+def fake_result(state, messages, *, executions=(), grounding=None):
+    return {
+        **state,
+        "messages": messages,
+        "search_executions": executions,
+        "grounding": grounding or GroundingEvidence(status="not_applicable"),
+    }
 
 
 def test_agent_module_imports_without_credentials():
@@ -91,7 +106,7 @@ def test_groq_request_does_not_require_other_credentials(monkeypatch):
     class FakeAgent:
         def invoke(self, state):
             captured["messages"] = state["messages"]
-            return {"messages": [AIMessage(content="fake reply")]}
+            return fake_result(state, [AIMessage(content="fake reply")])
 
     monkeypatch.setattr(ai_agent, "ChatGroq", fake_groq)
     monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
@@ -114,7 +129,7 @@ def test_openai_request_does_not_require_other_credentials(monkeypatch):
 
     class FakeAgent:
         def invoke(self, state):
-            return {"messages": [AIMessage(content="openai reply")]}
+            return fake_result(state, [AIMessage(content="openai reply")])
 
     monkeypatch.setattr(ai_agent, "ChatOpenAI", fake_openai)
     monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
@@ -142,7 +157,7 @@ def test_search_builds_tavily_tool_with_its_own_credential(monkeypatch):
 
     class FakeAgent:
         def invoke(self, state):
-            return {"messages": [AIMessage(content="searched reply")]}
+            return fake_result(state, [AIMessage(content="searched reply")])
 
     monkeypatch.setattr(ai_agent, "TavilySearch", fake_tavily)
 
@@ -199,7 +214,7 @@ def test_agent_converts_canonical_history(monkeypatch):
     class FakeAgent:
         def invoke(self, state):
             captured["messages"] = state["messages"]
-            return {"messages": [AIMessage(content="follow-up reply")]}
+            return fake_result(state, [AIMessage(content="follow-up reply")])
 
     monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
 
@@ -237,7 +252,7 @@ def test_agent_rejects_unusable_ai_response(monkeypatch, content):
 
     class FakeAgent:
         def invoke(self, state):
-            return {"messages": [AIMessage(content=content)]}
+            return fake_result(state, [AIMessage(content=content)])
 
     monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
 
@@ -251,49 +266,33 @@ def test_agent_extracts_and_normalizes_search_provenance(monkeypatch):
 
     class FakeAgent:
         def invoke(self, state):
-            return {
-                "messages": [
-                    AIMessage(
-                        content="",
-                        tool_calls=[
-                            {
-                                "name": "tavily_search",
-                                "args": {"query": "latest Python release"},
-                                "id": "search-1",
-                                "type": "tool_call",
-                            }
-                        ],
+            execution = SearchExecution(
+                query="latest Python release",
+                status="succeeded",
+                sources=(
+                    SearchSource(
+                        source_id="S1",
+                        title="Python releases",
+                        url="https://python.org/downloads/",
+                        snippet="Official downloads",
                     ),
-                    ToolMessage(
-                        name="tavily_search",
-                        tool_call_id="search-1",
-                        content=json.dumps(
-                            {
-                                "results": [
-                                    {
-                                        "title": " Python releases ",
-                                        "url": "https://python.org/downloads/",
-                                        "content": "Official downloads",
-                                        "score": 0.99,
-                                        "raw_content": "must not cross boundary",
-                                    },
-                                    {
-                                        "title": "Duplicate",
-                                        "url": "https://python.org/downloads/",
-                                        "content": "duplicate",
-                                    },
-                                    {
-                                        "title": "Release article",
-                                        "url": "https://example.com/python",
-                                        "content": "An article",
-                                    },
-                                ]
-                            }
-                        ),
+                    SearchSource(
+                        source_id="S2",
+                        title="Release article",
+                        url="https://example.com/python",
+                        snippet="An article",
                     ),
-                    AIMessage(content="Python was released."),
-                ]
-            }
+                ),
+            )
+            return fake_result(
+                state,
+                [AIMessage(content="Python was released. [S1]")],
+                executions=(execution,),
+                grounding=GroundingEvidence(
+                    status="cited",
+                    cited_source_ids=("S1",),
+                ),
+            )
 
     monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
 
@@ -303,7 +302,7 @@ def test_agent_extracts_and_normalizes_search_provenance(monkeypatch):
     )
 
     execution = outcome.search.executions[0]
-    assert outcome.reply == "Python was released."
+    assert outcome.reply == "Python was released. [S1]"
     assert execution.query == "latest Python release"
     assert execution.status == "succeeded"
     assert [source.title for source in execution.sources] == [
@@ -314,24 +313,9 @@ def test_agent_extracts_and_normalizes_search_provenance(monkeypatch):
 
 
 def test_search_executions_preserve_tool_result_order():
-    messages = [
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "tavily_search",
-                    "args": {"query": "first query"},
-                    "id": "search-1",
-                    "type": "tool_call",
-                },
-                {
-                    "name": "tavily_search",
-                    "args": {"query": "second query"},
-                    "id": "search-2",
-                    "type": "tool_call",
-                },
-            ],
-        ),
+    source_ids: dict[str, str] = {}
+    second, next_number = ai_agent._normalize_search_execution(
+        "second query",
         ToolMessage(
             name="tavily_search",
             tool_call_id="search-2",
@@ -347,6 +331,11 @@ def test_search_executions_preserve_tool_result_order():
                 }
             ),
         ),
+        source_ids,
+        1,
+    )
+    first, _ = ai_agent._normalize_search_execution(
+        "first query",
         ToolMessage(
             name="tavily_search",
             tool_call_id="search-1",
@@ -362,14 +351,12 @@ def test_search_executions_preserve_tool_result_order():
                 }
             ),
         ),
-    ]
+        source_ids,
+        next_number,
+    )
 
-    evidence = ai_agent._extract_search_evidence(messages, allowed=True)
-
-    assert [execution.query for execution in evidence.executions] == [
-        "second query",
-        "first query",
-    ]
+    assert [second.query, first.query] == ["second query", "first query"]
+    assert [second.sources[0].source_id, first.sources[0].source_id] == ["S1", "S2"]
 
 
 @pytest.mark.parametrize(
@@ -391,28 +378,23 @@ def test_agent_records_failed_search_without_leaking_provider_error(
 
     class FakeAgent:
         def invoke(self, state):
-            return {
-                "messages": [
-                    AIMessage(
-                        content="",
-                        tool_calls=[
-                            {
-                                "name": "tavily_search",
-                                "args": {"query": "current news"},
-                                "id": "search-1",
-                                "type": "tool_call",
-                            }
-                        ],
-                    ),
-                    ToolMessage(
-                        name="tavily_search",
-                        tool_call_id="search-1",
-                        status=status,
-                        content=content,
-                    ),
-                    AIMessage(content="I could not verify the news."),
-                ]
-            }
+            execution, _ = ai_agent._normalize_search_execution(
+                "current news",
+                ToolMessage(
+                    name="tavily_search",
+                    tool_call_id="search-1",
+                    status=status,
+                    content=content,
+                ),
+                {},
+                1,
+            )
+            return fake_result(
+                state,
+                [AIMessage(content="I could not verify the news.")],
+                executions=(execution,),
+                grounding=GroundingEvidence(status="unavailable"),
+            )
 
     monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
     outcome = call_agent(
@@ -424,29 +406,3 @@ def test_agent_records_failed_search_without_leaking_provider_error(
     assert execution.status == "failed"
     assert execution.sources == ()
     assert "provider unavailable" not in execution.model_dump_json()
-
-
-def test_agent_rejects_unmatched_search_result(monkeypatch):
-    monkeypatch.setattr(ai_agent, "ChatGroq", lambda **kwargs: object())
-    monkeypatch.setattr(ai_agent, "TavilySearch", lambda **kwargs: object())
-
-    class FakeAgent:
-        def invoke(self, state):
-            return {
-                "messages": [
-                    ToolMessage(
-                        name="tavily_search",
-                        tool_call_id="missing-call",
-                        content=json.dumps({"results": []}),
-                    ),
-                    AIMessage(content="Answer"),
-                ]
-            }
-
-    monkeypatch.setattr(ai_agent, "_build_agent_graph", lambda *args: FakeAgent())
-
-    with pytest.raises(InvalidAgentResponseError, match="unmatched"):
-        call_agent(
-            make_settings(groq_api_key="groq", tavily_api_key="tavily"),
-            allow_search=True,
-        )

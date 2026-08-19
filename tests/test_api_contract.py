@@ -9,6 +9,7 @@ from api_contract import (
     ChatRequest,
     ChatResponse,
     ContextUsage,
+    GroundingEvidence,
     SearchEvidence,
     SearchExecution,
     SearchSource,
@@ -126,6 +127,7 @@ def test_success_reply_must_be_reusable_as_conversation_history():
         reply="x" * MAX_MESSAGE_CHARACTERS,
         context=context_usage(),
         search=SearchEvidence(allowed=False, attempted=False),
+        grounding=GroundingEvidence(status="not_applicable"),
     )
 
     assert len(response.reply) == MAX_MESSAGE_CHARACTERS
@@ -136,6 +138,7 @@ def test_success_reply_must_be_reusable_as_conversation_history():
             reply="x" * (MAX_MESSAGE_CHARACTERS + 1),
             context=context_usage(),
             search=SearchEvidence(allowed=False, attempted=False),
+            grounding=GroundingEvidence(status="not_applicable"),
         )
 
 
@@ -156,6 +159,7 @@ def test_search_evidence_accepts_disabled_unused_and_successful_states():
                 status="succeeded",
                 sources=(
                     SearchSource(
+                        source_id="S1",
                         title="Official release",
                         url="https://example.com/release",
                         snippet="Release notes",
@@ -187,7 +191,7 @@ def test_search_evidence_rejects_contradictory_state(values):
 
 
 def test_search_execution_status_must_match_source_presence():
-    source = SearchSource(title="Result", url="https://example.com")
+    source = SearchSource(source_id="S1", title="Result", url="https://example.com")
 
     with pytest.raises(ValidationError, match="successful search"):
         SearchExecution(query="query", status="succeeded")
@@ -197,7 +201,7 @@ def test_search_execution_status_must_match_source_presence():
 
 def test_search_source_requires_an_http_url():
     with pytest.raises(ValidationError):
-        SearchSource(title="Unsafe", url="javascript:alert(1)")
+        SearchSource(source_id="S1", title="Unsafe", url="javascript:alert(1)")
 
 
 def test_search_evidence_limits_executions():
@@ -209,6 +213,82 @@ def test_search_evidence_limits_executions():
                 SearchExecution(query=f"query {number}", status="failed")
                 for number in range(4)
             ),
+        )
+
+
+def test_grounded_response_requires_returned_inline_source_ids():
+    search = SearchEvidence(
+        allowed=True,
+        attempted=True,
+        executions=(
+            SearchExecution(
+                query="release",
+                status="succeeded",
+                sources=(
+                    SearchSource(
+                        source_id="S1",
+                        title="Release notes",
+                        url="https://example.com/release",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    response = ChatResponse(
+        model_key="model",
+        reply="The release is available. [S1]",
+        context=context_usage(),
+        search=search,
+        grounding=GroundingEvidence(status="cited", cited_source_ids=("S1",)),
+    )
+
+    assert response.grounding.status == "cited"
+
+    for reply, grounding in (
+        ("Missing citation", GroundingEvidence(status="cited")),
+        (
+            "Invented citation [S2]",
+            GroundingEvidence(status="cited", cited_source_ids=("S2",)),
+        ),
+        (
+            "Order [S1] [S1]",
+            GroundingEvidence(status="cited", cited_source_ids=("S1", "S2")),
+        ),
+    ):
+        with pytest.raises(ValidationError):
+            ChatResponse(
+                model_key="model",
+                reply=reply,
+                context=context_usage(),
+                search=search,
+                grounding=grounding,
+            )
+
+
+def test_search_source_identifiers_and_urls_are_one_to_one():
+    def evidence(*sources):
+        return SearchEvidence(
+            allowed=True,
+            attempted=True,
+            executions=(
+                SearchExecution(
+                    query="query",
+                    status="succeeded",
+                    sources=sources,
+                ),
+            ),
+        )
+
+    with pytest.raises(ValidationError, match="one-to-one"):
+        evidence(
+            SearchSource(source_id="S1", title="A", url="https://example.com/a"),
+            SearchSource(source_id="S1", title="B", url="https://example.com/b"),
+        )
+    with pytest.raises(ValidationError, match="one-to-one"):
+        evidence(
+            SearchSource(source_id="S1", title="A", url="https://example.com/a"),
+            SearchSource(source_id="S2", title="A again", url="https://example.com/a"),
         )
 
 

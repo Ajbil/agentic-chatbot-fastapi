@@ -142,6 +142,34 @@ def evaluate_case(
         if execution.status == "succeeded"
         for source in execution.sources
     }
+    cited_source_ids = set(response.grounding.cited_source_ids)
+    expected_grounding_status = (
+        "cited"
+        if unique_sources
+        else "unavailable"
+        if response.search.attempted
+        else "not_applicable"
+    )
+    checks.append(
+        EvaluationCheck(
+            name="grounding_contract_consistent",
+            severity="hard",
+            passed=(
+                response.grounding.status == expected_grounding_status
+                and cited_source_ids.issubset(
+                    {
+                        source.source_id
+                        for execution in response.search.executions
+                        for source in execution.sources
+                    }
+                )
+            ),
+            evidence=(
+                f"Grounding status: {response.grounding.status}; cited source IDs: "
+                f"{sorted(cited_source_ids)}."
+            ),
+        )
+    )
     if policy == "required":
         checks.extend(
             (
@@ -163,6 +191,17 @@ def evaluate_case(
                     evidence=(
                         f"Unique sources: {len(unique_sources)}; required: "
                         f"{case.expectations.min_unique_sources}."
+                    ),
+                ),
+                EvaluationCheck(
+                    name="minimum_cited_source_count",
+                    severity="hard",
+                    passed=(
+                        len(cited_source_ids) >= case.expectations.min_cited_sources
+                    ),
+                    evidence=(
+                        f"Cited sources: {len(cited_source_ids)}; required: "
+                        f"{case.expectations.min_cited_sources}."
                     ),
                 ),
             )
@@ -254,6 +293,9 @@ def _summarize(
     provenance_satisfied = sum(
         _provenance_checks_passed(results_by_id[case.id]) for case in required_cases
     )
+    citation_satisfied = sum(
+        _citation_checks_passed(results_by_id[case.id]) for case in required_cases
+    )
 
     return EvaluationSummary(
         total_cases=len(results),
@@ -271,6 +313,9 @@ def _summarize(
         provenance_required_cases=len(required_cases),
         provenance_satisfied=provenance_satisfied,
         provenance_success_rate=_ratio(provenance_satisfied, len(required_cases)),
+        citation_required_cases=len(required_cases),
+        citation_satisfied=citation_satisfied,
+        citation_success_rate=_ratio(citation_satisfied, len(required_cases)),
         execution_failures=sum(
             record.response is None for record in records_by_id.values()
         ),
@@ -287,6 +332,14 @@ def _search_avoided(record: CandidateRecord) -> bool:
 
 def _provenance_checks_passed(result: EvaluationCaseResult) -> bool:
     required_names = {"successful_search_count", "unique_source_count"}
+    checks = [check for check in result.checks if check.name in required_names]
+    return {check.name for check in checks} == required_names and all(
+        check.passed for check in checks
+    )
+
+
+def _citation_checks_passed(result: EvaluationCaseResult) -> bool:
+    required_names = {"grounding_contract_consistent", "minimum_cited_source_count"}
     checks = [check for check in result.checks if check.name in required_names]
     return {check.name for check in checks} == required_names and all(
         check.passed for check in checks

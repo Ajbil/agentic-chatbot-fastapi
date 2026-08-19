@@ -10,7 +10,9 @@ import frontend_chat
 from ai_agent import AgentOutcome, AgentStreamEvent, PreparedAgentRun
 from api_contract import (
     ChatRequest,
+    GroundingEvidence,
     SearchEvidence,
+    SearchExecution,
     StreamCompleteEvent,
     StreamDeltaEvent,
     StreamStartedEvent,
@@ -43,6 +45,11 @@ def response_payload(reply="Hello world"):
             "was_truncated": False,
         },
         "search": {"allowed": False, "attempted": False, "executions": []},
+        "grounding": {
+            "status": "not_applicable",
+            "cited_source_ids": [],
+            "repair_attempted": False,
+        },
     }
 
 
@@ -222,7 +229,7 @@ def test_agent_stream_buffers_tool_decision_text_and_emits_final_answer():
                 "type": "updates",
                 "ns": (),
                 "data": {
-                    "tools": {
+                    "normalize_search_results": {
                         "messages": [
                             ToolMessage(
                                 name="tavily_search",
@@ -239,7 +246,10 @@ def test_agent_stream_buffers_tool_decision_text_and_emits_final_answer():
                                     }
                                 ),
                             )
-                        ]
+                        ],
+                        "search_executions": (
+                            SearchExecution(query="news", status="failed"),
+                        ),
                     }
                 },
             }
@@ -261,7 +271,7 @@ def test_agent_stream_buffers_tool_decision_text_and_emits_final_answer():
 
     events = list(
         ai_agent.stream_prepared_agent(
-            PreparedAgentRun(FakeAgent(), {"messages": []}, True)
+            PreparedAgentRun(FakeAgent(), ai_agent._initial_graph_state([]), True)
         )
     )
 
@@ -295,7 +305,9 @@ def test_backend_stream_is_contiguous_and_terminal(monkeypatch):
                 AgentStreamEvent(
                     "complete",
                     AgentOutcome(
-                        "Hello world", SearchEvidence(allowed=False, attempted=False)
+                        "Hello world",
+                        SearchEvidence(allowed=False, attempted=False),
+                        GroundingEvidence(status="not_applicable"),
                     ),
                 ),
             ]

@@ -75,6 +75,26 @@ def chat_success(request, reply, *, truncated=False, search=None):
     message_count = len(request["messages"])
     omitted_count = 2 if truncated else 0
     included_count = message_count - omitted_count
+    search_payload = search or {
+        "allowed": request["allow_search"],
+        "attempted": False,
+        "executions": [],
+    }
+    cited_source_ids = list(
+        dict.fromkeys(
+            source["source_id"]
+            for execution in search_payload["executions"]
+            if execution["status"] == "succeeded"
+            for source in execution["sources"]
+        )
+    )
+    grounding_status = (
+        "cited"
+        if cited_source_ids
+        else "unavailable"
+        if search_payload["attempted"]
+        else "not_applicable"
+    )
     return {
         "model_key": request["model_key"],
         "reply": reply,
@@ -91,11 +111,11 @@ def chat_success(request, reply, *, truncated=False, search=None):
             "omitted_message_count": omitted_count,
             "was_truncated": truncated,
         },
-        "search": search
-        or {
-            "allowed": request["allow_search"],
-            "attempted": False,
-            "executions": [],
+        "search": search_payload,
+        "grounding": {
+            "status": grounding_status,
+            "cited_source_ids": cited_source_ids,
+            "repair_attempted": False,
         },
     }
 
@@ -200,6 +220,7 @@ def test_streamlit_keeps_web_sources_with_their_answer(monkeypatch):
                         "status": "succeeded",
                         "sources": [
                             {
+                                "source_id": "S1",
                                 "title": "Official release",
                                 "url": "https://example.com/release",
                                 "snippet": "Release evidence",
@@ -217,7 +238,15 @@ def test_streamlit_keeps_web_sources_with_their_answer(monkeypatch):
             search = {"allowed": True, "attempted": False, "executions": []}
         return FakeResponse(
             200,
-            chat_success(json, f"Answer {len(captured_requests)}", search=search),
+            chat_success(
+                json,
+                (
+                    "Answer 1 [S1]"
+                    if len(captured_requests) == 1
+                    else f"Answer {len(captured_requests)}"
+                ),
+                search=search,
+            ),
         )
 
     monkeypatch.setattr(frontend_chat.requests, "post", fake_post)
@@ -230,6 +259,11 @@ def test_streamlit_keeps_web_sources_with_their_answer(monkeypatch):
     assert [item.label for item in app.expander] == ["Web sources"]
     assert app.text[0].value == "Release evidence"
     assert any("latest release" in caption.value for caption in app.caption)
+    assert any(
+        "Validated source references: [S1]" in caption.value
+        and "reference integrity" in caption.value
+        for caption in app.caption
+    )
     assert any("additional web search" in warning.value for warning in app.warning)
     assert any("available but not used" in caption.value for caption in app.caption)
 
