@@ -25,9 +25,10 @@ def context_payload(**overrides):
 
 
 class FakeResponse:
-    def __init__(self, status_code, payload):
+    def __init__(self, status_code, payload, request_id=None):
         self.status_code = status_code
         self.payload = payload
+        self.headers = {"X-Request-ID": request_id} if request_id is not None else {}
 
     def json(self):
         return self.payload
@@ -105,6 +106,7 @@ def test_frontend_preserves_structured_backend_error(monkeypatch):
                     "details": [],
                 }
             },
+            "a" * 32,
         ),
     )
 
@@ -113,6 +115,7 @@ def test_frontend_preserves_structured_backend_error(monkeypatch):
 
     assert captured.value.code == "unsupported_model"
     assert captured.value.status_code == 400
+    assert captured.value.request_id == "a" * 32
     assert str(captured.value) == "The model is not supported."
 
 

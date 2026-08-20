@@ -1,3 +1,5 @@
+import re
+
 from fastapi.testclient import TestClient
 
 import backend
@@ -11,6 +13,7 @@ from api_contract import GroundingEvidence, SearchEvidence
 from model_registry import DEFAULT_MODEL_KEY, ModelSpec, Provider
 
 client = TestClient(backend.app)
+REQUEST_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
 
 def valid_chat_payload(**overrides):
@@ -36,6 +39,7 @@ def test_models_endpoint_returns_backend_owned_catalog():
     response = client.get("/models")
 
     assert response.status_code == 200
+    assert REQUEST_ID_PATTERN.fullmatch(response.headers["X-Request-ID"])
     payload = response.json()
     assert payload["default_model_key"] == DEFAULT_MODEL_KEY
     assert [model["key"] for model in payload["models"]] == [
@@ -311,3 +315,5 @@ def test_openapi_documents_chat_contract_and_error_responses():
             "schema"
         ]
         assert schema["$ref"].endswith("/ErrorResponse")
+    for response in operation["responses"].values():
+        assert "X-Request-ID" in response["headers"]
