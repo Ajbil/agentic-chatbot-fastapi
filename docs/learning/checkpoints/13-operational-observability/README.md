@@ -2,10 +2,10 @@
 
 | Field | Value |
 |---|---|
-| Status | In progress |
+| Status | In review |
 | Date | 2026-08-20 |
 | Branch | `codex/operational-observability` |
-| Pull request | Pending |
+| Pull request | [#21 - Add privacy-safe operational observability](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/21) |
 
 ## Objective
 
