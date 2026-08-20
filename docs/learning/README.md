@@ -20,7 +20,8 @@ The journal is not a raw development transcript. Each checkpoint is a curated en
 | [09](checkpoints/09-enforced-quality-gates/README.md) | Enforced quality gates and portfolio-ready repository | Complete | [PR #9](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/9), [merge commit `d85c52f`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/d85c52f) |
 | [10](checkpoints/10-deterministic-ai-evaluation/README.md) | Deterministic AI evaluation baseline | Complete | [PR #16](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/16), [merge commit `f19fa2d`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/f19fa2d) |
 | [11](checkpoints/11-application-owned-langgraph-workflow/README.md) | Application-owned LangGraph workflow | Complete | [PR #17](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/17), [merge commit `117f1aa`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/117f1aa) |
-| [12](checkpoints/12-enforced-citation-integrity/README.md) | Enforced citation integrity and grounded answer contract | In review | [Draft PR #18](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/18) |
+| [12](checkpoints/12-enforced-citation-integrity/README.md) | Enforced citation integrity and grounded answer contract | Complete | [PR #18](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/18), [merge commit `25c03d8`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/25c03d8) |
+| [13](checkpoints/13-operational-observability/README.md) | Privacy-safe operational observability and request correlation | In progress | Branch `codex/operational-observability` |
 
 ## Reference material
 

@@ -6,7 +6,7 @@
 [![Coverage gate: 80%](https://img.shields.io/badge/branch_coverage-%E2%89%A580%25-success)](CONTRIBUTING.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A typed and tested AI-agent application built with a Streamlit frontend, FastAPI backend, and an application-owned LangGraph workflow. It supports bounded optional Tavily search, auditable source provenance, deterministic context budgeting, and versioned NDJSON answer streaming across Groq and OpenAI models.
+A typed and tested AI-agent application built with a Streamlit frontend, FastAPI backend, and an application-owned LangGraph workflow. It supports bounded optional Tavily search, auditable source provenance, deterministic context budgeting, versioned NDJSON answer streaming, and privacy-safe operational telemetry across Groq and OpenAI models.
 
 ## Engineering highlights
 
@@ -17,6 +17,7 @@ A typed and tested AI-agent application built with a Streamlit frontend, FastAPI
 - Versioned NDJSON events enforce ordering, one terminal outcome, and atomic history commits.
 - Versioned AI evaluations distinguish deterministic contract gates from advisory answer-quality signals.
 - An explicit typed StateGraph makes model/tool routing, validation, and termination reviewable application code.
+- Server-generated request IDs correlate API responses, safe structured logs, and bounded Prometheus metrics without recording conversation content.
 - Offline tests use fake providers; local and CI gates require lint, formatting, static types, branch coverage, deterministic evaluation replay, compilation, and CodeQL analysis.
 - The [engineering learning journal](docs/learning/README.md) preserves decisions, alternatives, evidence, and transferable lessons for every checkpoint.
 
@@ -39,6 +40,8 @@ flowchart LR
     G -->|"invalid, once"| M
     P --> G
     S --> UI
+    API -. "safe lifecycle events" .-> L["Structured logs"]
+    API -. "bounded process metrics" .-> O["GET /metrics"]
 ```
 
 ## Technology stack
@@ -50,6 +53,7 @@ flowchart LR
 - LangGraph `StateGraph` and LangChain message/tool contracts for explicit orchestration
 - Groq and OpenAI as model providers
 - Tavily for optional web search
+- Prometheus client for process-local operational metrics
 - Pipenv for dependency and environment management
 - Ruff, mypy, pytest, and coverage.py for enforced quality gates
 - GitHub Actions, CodeQL, and Dependabot for repository automation
@@ -106,6 +110,8 @@ Configuration is loaded from environment variables and the local `.env` file.
 | `BACKEND_BASE_URL` | Optional frontend override | `http://127.0.0.1:3003` |
 | `BACKEND_REQUEST_TIMEOUT_SECONDS` | Optional frontend override | `30` |
 | `BACKEND_STREAM_READ_TIMEOUT_SECONDS` | Optional streaming idle-read timeout | `120` |
+| `APP_LOG_FORMAT` | Optional backend log format: `json` or `console` | `json` |
+| `APP_LOG_LEVEL` | Optional backend log level | `INFO` |
 
 Settings are validated centrally. Missing credentials fail only when a request uses the corresponding provider or tool.
 
@@ -280,6 +286,31 @@ The model decides whether search is useful, but the application owns every execu
 
 Workflow state uses LangGraph's message reducer and exists only for one API request. The trusted system and grounding policies are injected at the model boundary rather than appended to returned conversation history. There is intentionally no checkpointer yet: browser-session history remains the product's current persistence boundary, while durable conversations and resumable execution require identity, storage, retention, and authorization decisions of their own.
 
+## Operational observability
+
+Every backend request receives a new server-generated `X-Request-ID`. The same identifier is returned in the response and attached to request-lifecycle and chat-run log records. A caller-supplied value is deliberately ignored, so external input cannot forge correlation with another request. This identifier supports debugging only; it is not authentication, authorization, idempotency, or a durable trace ID. When the frontend receives a structured backend error, it displays the reference so a user can report it without exposing internal diagnostics.
+
+Backend logs default to newline-delimited JSON for machine ingestion. Set `APP_LOG_FORMAT=console` for compact local output and `APP_LOG_LEVEL` to `DEBUG`, `INFO`, `WARNING`, or `ERROR`. The log schema uses an explicit allowlist. It can contain bounded operational fields such as route template, method, status class, duration, model key, search counts, grounding status, context-truncation counts, exception class, and sanitized stack-frame locations. It never intentionally records prompts, replies, message history, search queries, source titles/snippets/URLs, secrets, or raw provider exception messages.
+
+`GET /metrics` exposes process-local Prometheus text with these application-owned signals:
+
+- HTTP request count and duration by bounded method, route template, and status class.
+- Chat-run count and duration by transport, registered model key, and terminal outcome.
+- Active streams and time to first emitted answer delta.
+- Search execution and grounding results using closed status labels.
+- Estimated input-token observations and whether recent-window trimming occurred.
+
+The transport and domain lifecycles are intentionally separate. A stream may already have HTTP `200` headers when it later emits a typed terminal error; HTTP metrics then describe the completed transport while `chat_runs_total` records the domain failure. Interrupted response bodies are counted as `aborted`, and chat runs finalize at most once.
+
+With the backend running, inspect correlation and metrics locally:
+
+```powershell
+curl.exe -i http://127.0.0.1:3003/models
+curl.exe http://127.0.0.1:3003/metrics
+```
+
+The application does not yet scrape, retain, visualize, alert on, or distribute these signals. `/metrics` has no application authentication and should not be exposed directly to the public internet; a production deployment must protect it at the network or platform boundary.
+
 ## Quality gates
 
 Install the locked development environment, then run the same checks required by pull requests:
@@ -295,7 +326,7 @@ python -m pipenv run python -m evaluations replay --check-baseline
 python -m pipenv run python -m pytest --cov=. --cov-report=term-missing --cov-fail-under=80
 ```
 
-The 183 tests use fake providers and do not make Groq, OpenAI, or Tavily requests. Coverage uses branch measurement, and CI rejects a total below 80%. The separate `evaluation` job validates and replays the committed AI-behavior baseline without credentials. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow and formatting command.
+The 199 tests use fake providers and do not make Groq, OpenAI, or Tavily requests. Coverage uses branch measurement, and CI rejects a total below 80%. The separate `evaluation` job validates and replays the committed AI-behavior baseline without credentials. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow and formatting command.
 
 ## AI evaluation baseline
 
@@ -328,14 +359,15 @@ Live runs are sequential, make no automatic retries, continue after individual f
 - Watch typed model and search progress while the final answer streams.
 - Replay a versioned, deterministic AI-behavior baseline and run opt-in live evaluations through the public API.
 - Inspect an explicit typed model/validation/tool graph whose safety limits run before external execution.
+- Correlate failures using a server-generated request reference and inspect privacy-safe structured logs and Prometheus metrics.
 
 ## Current limitations
 
-This is a portfolio-ready engineering project, not a deployed production service. The evaluation baseline detects contract, search-policy, and reference-integrity regressions but does not prove factual correctness, semantic source support, or real-world model quality. Conversation history remains temporary and browser-session-owned; the project does not yet provide authentication, authorization, persistent storage, deployment infrastructure, rate limiting, production telemetry, service-level objectives, resumable streams, strong cross-provider cancellation, semantic claim verification, or exact provider token accounting.
+This is a portfolio-ready engineering project, not a deployed production service. The evaluation baseline detects contract, search-policy, and reference-integrity regressions but does not prove factual correctness, semantic source support, or real-world model quality. Conversation history remains temporary and browser-session-owned. Telemetry is process-local: there is no scraper, retention, dashboard, alerting, distributed tracing, or service-level objective. The project also does not yet provide authentication, authorization, persistent storage, deployment infrastructure, rate limiting, resumable streams, strong cross-provider cancellation, semantic claim verification, or exact provider token accounting.
 
 ## Learning roadmap
 
-Checkpoint 12 enforces deterministic reference integrity on top of the application-owned graph. Later checkpoints can add observability, persistence and identity, deployment hardening, semantic claim verification, and load/resilience testing. These are deliberately separated so this repository does not claim production readiness before it has production evidence.
+Checkpoint 13 adds a privacy-safe operational measurement foundation around the existing application-owned graph. Later checkpoints can add persistence and identity, deployment hardening, telemetry collection and alerting, semantic claim verification, and load/resilience testing. These are deliberately separated so this repository does not claim production readiness before it has production evidence.
 
 ## Learning journal
 
