@@ -23,6 +23,7 @@ files = [
     "frontend_catalog.py",
     "frontend_chat.py",
     "frontend_session.py",
+    "observability.py",
     "ai_agent.py",
     "backend.py",
     "frontend.py",

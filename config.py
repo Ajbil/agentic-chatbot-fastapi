@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,6 +17,8 @@ class Settings(BaseSettings):
     backend_base_url: HttpUrl = HttpUrl("http://127.0.0.1:3003")
     backend_request_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     backend_stream_read_timeout_seconds: float = Field(default=120.0, gt=0, le=600)
+    app_log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    app_log_format: Literal["json", "console"] = "json"
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",

@@ -16,6 +16,7 @@ fastapi = "*"
 uvicorn = "*"
 streamlit = "*"
 requests = "*"
+prometheus-client = "*"
 
 [dev-packages]
 pytest = "*"
