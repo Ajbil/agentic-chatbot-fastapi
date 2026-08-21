@@ -1770,12 +1770,12 @@
         },
         "pydantic-settings": {
             "hashes": [
-                "sha256:a20c97b37910b6550d5ea50fbcc2d4187defe58cd57070b73863d069419c9440",
-                "sha256:c19dd64b19097f1de80184f0cc7b0272a13ae6e170cbf240a3e27e381ed14a5f"
+                "sha256:0ba092c291c94baceb5eff768aa0d56400a457585bc0175925a5a5510303da42",
+                "sha256:694b793e84f766ba76a90ebdefc01d0a9a045dab0382bee70393da93712ad117"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.10'",
-            "version": "==2.14.2"
+            "version": "==2.15.0"
         },
         "pydeck": {
             "hashes": [
@@ -1795,11 +1795,11 @@
         },
         "python-dotenv": {
             "hashes": [
-                "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a",
-                "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3"
+                "sha256:904552145e8bfed22162c09dab1c2b9b54fefa7b23ba780f4f26ca0316b0f0d9",
+                "sha256:a20a594dabeaa385725aa239d5244871c143ecb356add8a20fcf23773a6c3a35"
             ],
             "markers": "python_version >= '3.10'",
-            "version": "==1.2.2"
+            "version": "==1.2.3"
         },
         "python-multipart": {
             "hashes": [
@@ -2285,11 +2285,11 @@
         },
         "typing-inspection": {
             "hashes": [
-                "sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7",
-                "sha256:ba561c48a67c5958007083d386c3295464928b01faa735ab8547c5692e87f464"
+                "sha256:547274fa6b0a561ccf549cc9524b999a578e737d015d8709d021f9d0d13bea47",
+                "sha256:65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147"
             ],
-            "markers": "python_version >= '3.9'",
-            "version": "==0.4.2"
+            "markers": "python_version >= '3.10'",
+            "version": "==0.4.4"
         },
         "tzdata": {
             "hashes": [
