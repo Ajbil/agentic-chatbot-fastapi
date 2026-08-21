@@ -12,6 +12,8 @@ def empty_environment(monkeypatch):
         "BACKEND_BASE_URL",
         "BACKEND_REQUEST_TIMEOUT_SECONDS",
         "BACKEND_STREAM_READ_TIMEOUT_SECONDS",
+        "APP_LOG_LEVEL",
+        "APP_LOG_FORMAT",
     ):
         monkeypatch.delenv(variable_name, raising=False)
 
@@ -28,6 +30,8 @@ def test_settings_have_safe_defaults_without_credentials(empty_environment):
     assert settings.backend_models_url == "http://127.0.0.1:3003/models"
     assert settings.backend_request_timeout_seconds == 30.0
     assert settings.backend_stream_read_timeout_seconds == 120.0
+    assert settings.app_log_level == "INFO"
+    assert settings.app_log_format == "json"
 
 
 def test_environment_overrides_defaults(monkeypatch, empty_environment):
@@ -35,6 +39,8 @@ def test_environment_overrides_defaults(monkeypatch, empty_environment):
     monkeypatch.setenv("BACKEND_BASE_URL", "http://localhost:9000/api/")
     monkeypatch.setenv("BACKEND_REQUEST_TIMEOUT_SECONDS", "45")
     monkeypatch.setenv("BACKEND_STREAM_READ_TIMEOUT_SECONDS", "180")
+    monkeypatch.setenv("APP_LOG_LEVEL", "WARNING")
+    monkeypatch.setenv("APP_LOG_FORMAT", "console")
 
     settings = Settings(_env_file=None)
 
@@ -46,6 +52,8 @@ def test_environment_overrides_defaults(monkeypatch, empty_environment):
     assert settings.backend_models_url == "http://localhost:9000/api/models"
     assert settings.backend_request_timeout_seconds == 45.0
     assert settings.backend_stream_read_timeout_seconds == 180.0
+    assert settings.app_log_level == "WARNING"
+    assert settings.app_log_format == "console"
 
 
 def test_secret_values_are_masked():
@@ -70,3 +78,12 @@ def test_invalid_stream_read_timeout_is_rejected(timeout):
 def test_invalid_backend_base_url_is_rejected():
     with pytest.raises(ValidationError):
         Settings(_env_file=None, backend_base_url="not-a-url")
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("app_log_level", "TRACE"), ("app_log_format", "xml")],
+)
+def test_invalid_logging_configuration_is_rejected(field, value):
+    with pytest.raises(ValidationError):
+        Settings.model_validate({field: value})

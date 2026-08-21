@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | In review |
+| Status | Complete |
 | Date | 2026-08-16 |
 | Branch | `codex/grounded-citation-contract` |
 | Pull request | [#18 - Enforce citation integrity for grounded answers](https://github.com/Ajbil/agentic-chatbot-fastapi/pull/18) |
@@ -10,6 +10,7 @@
 | Test commit | [`270f676`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/270f676) |
 | Evaluation commit | [`b270036`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/b270036) |
 | Documentation commit | [`9c22f18`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/9c22f18) |
+| Merge commit | [`25c03d8`](https://github.com/Ajbil/agentic-chatbot-fastapi/commit/25c03d8) |
 
 ## Objective
 

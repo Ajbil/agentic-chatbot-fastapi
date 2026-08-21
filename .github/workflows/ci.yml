@@ -86,7 +86,7 @@ jobs:
           python -m pipenv run python -m py_compile
           config.py model_registry.py api_contract.py context_budget.py
           frontend_catalog.py frontend_chat.py frontend_session.py
-          ai_agent.py backend.py frontend.py evaluations/__init__.py
+          observability.py ai_agent.py backend.py frontend.py evaluations/__init__.py
           evaluations/models.py evaluations/scoring.py evaluations/storage.py
           evaluations/live.py evaluations/__main__.py
 

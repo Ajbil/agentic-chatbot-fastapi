@@ -1,3 +1,4 @@
+import re
 from collections.abc import Iterator
 
 import requests
@@ -26,11 +27,26 @@ class ChatClientError(RuntimeError):
         code: str = "chat_request_failed",
         status_code: int | None = None,
         partial_reply: str = "",
+        request_id: str | None = None,
     ):
         super().__init__(message)
         self.code = code
         self.status_code = status_code
         self.partial_reply = partial_reply
+        self.request_id = request_id
+
+
+REQUEST_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _response_request_id(response: object) -> str | None:
+    headers = getattr(response, "headers", None)
+    value = headers.get("X-Request-ID") if headers is not None else None
+    return (
+        value
+        if isinstance(value, str) and REQUEST_ID_PATTERN.fullmatch(value)
+        else None
+    )
 
 
 def send_chat(url: str, timeout: float, request: ChatRequest) -> ChatResponse:
@@ -45,12 +61,15 @@ def send_chat(url: str, timeout: float, request: ChatRequest) -> ChatResponse:
     except requests.RequestException as exc:
         raise ChatClientError(f"The backend chat request failed: {exc}") from exc
 
+    request_id = _response_request_id(response)
+
     try:
         payload = response.json()
     except ValueError as exc:
         raise ChatClientError(
             "The backend returned malformed JSON.",
             status_code=response.status_code,
+            request_id=request_id,
         ) from exc
 
     if response.status_code == 200:
@@ -60,6 +79,7 @@ def send_chat(url: str, timeout: float, request: ChatRequest) -> ChatResponse:
             raise ChatClientError(
                 "The backend returned an invalid success response.",
                 status_code=response.status_code,
+                request_id=request_id,
             ) from exc
 
     try:
@@ -68,12 +88,14 @@ def send_chat(url: str, timeout: float, request: ChatRequest) -> ChatResponse:
         raise ChatClientError(
             "The backend returned an invalid error response.",
             status_code=response.status_code,
+            request_id=request_id,
         ) from exc
 
     raise ChatClientError(
         error_response.error.message,
         code=error_response.error.code,
         status_code=response.status_code,
+        request_id=request_id,
     )
 
 
@@ -95,6 +117,7 @@ def stream_chat(
     except requests.RequestException as exc:
         raise ChatClientError(f"The backend chat request failed: {exc}") from exc
 
+    request_id = _response_request_id(response)
     assembled_reply = ""
     expected_sequence = 1
     started = False
@@ -192,5 +215,9 @@ def stream_chat(
             code="invalid_stream_response",
             partial_reply=assembled_reply,
         )
+    except ChatClientError as exc:
+        if exc.request_id is None:
+            exc.request_id = request_id
+        raise
     finally:
         response.close()

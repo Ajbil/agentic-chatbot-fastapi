@@ -192,12 +192,14 @@ def test_repeated_failure_replaces_error_without_duplicating_message():
         code="service_unavailable",
         message="Second failure",
         status_code=503,
+        request_id="c" * 32,
     )
 
     assert state.messages == []
     assert state.failed_turn.user_message.content == "Please retry me"
     assert state.failed_turn.code == "service_unavailable"
     assert state.failed_turn.status_code == 503
+    assert state.failed_turn.request_id == "c" * 32
 
 
 def test_successful_retry_commits_exactly_one_exchange():

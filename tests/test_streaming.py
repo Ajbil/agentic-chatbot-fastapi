@@ -58,11 +58,12 @@ def encode_events(events):
 
 
 class FakeStreamResponse:
-    def __init__(self, status_code=200, lines=(), payload=None):
+    def __init__(self, status_code=200, lines=(), payload=None, request_id=None):
         self.status_code = status_code
         self.lines = lines
         self.payload = payload
         self.closed = False
+        self.headers = {"X-Request-ID": request_id} if request_id is not None else {}
 
     def iter_lines(self, decode_unicode=False):
         return iter(self.lines)
@@ -156,6 +157,7 @@ def test_frontend_preserves_pre_stream_http_error(monkeypatch):
                 "details": [],
             }
         },
+        request_id="b" * 32,
     )
     monkeypatch.setattr(
         frontend_chat.requests, "post", lambda *args, **kwargs: response
@@ -166,6 +168,7 @@ def test_frontend_preserves_pre_stream_http_error(monkeypatch):
 
     assert captured.value.code == "service_configuration_error"
     assert captured.value.status_code == 503
+    assert captured.value.request_id == "b" * 32
 
 
 def test_frontend_preserves_partial_reply_on_terminal_error(monkeypatch):

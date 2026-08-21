@@ -174,6 +174,7 @@ def _send_attempt(
                 message=str(exc),
                 status_code=exc.status_code,
                 partial_reply=exc.partial_reply,
+                request_id=exc.request_id,
             )
         except (ValidationError, ConversationStateError):
             state.record_failure(
@@ -212,6 +213,8 @@ def _render_failed_turn(
         else ""
     )
     st.caption(f"Error code: {failed_turn.code}{status_suffix}")
+    if failed_turn.request_id is not None:
+        st.caption(f"Request reference: {failed_turn.request_id}")
 
     if st.button(
         "Retry",

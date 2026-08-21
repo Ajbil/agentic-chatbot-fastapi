@@ -35,9 +35,10 @@ VALID_CATALOG = {
 
 
 class FakeResponse:
-    def __init__(self, status_code, payload):
+    def __init__(self, status_code, payload, request_id=None):
         self.status_code = status_code
         self.payload = payload
+        self.headers = {"X-Request-ID": request_id} if request_id is not None else {}
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -358,6 +359,7 @@ def test_streamlit_failure_is_retryable_and_not_committed(monkeypatch):
                         "details": [],
                     }
                 },
+                request_id="d" * 32,
             )
         return FakeResponse(
             200,
@@ -373,6 +375,10 @@ def test_streamlit_failure_is_retryable_and_not_committed(monkeypatch):
     assert app.chat_input[0].disabled is True
     assert "Not added to conversation history" in app.chat_message[0].caption[0].value
     assert app.error[0].value == "Provider configuration is unavailable."
+    assert any(
+        "Request reference" in caption.value and "d" * 32 in caption.value
+        for caption in app.caption
+    )
 
     retry_button = next(button for button in app.button if button.label == "Retry")
     retry_button.click().run()
